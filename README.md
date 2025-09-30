@@ -5,11 +5,15 @@ A Homebridge plugin for smart locks via Seam.co API. Control your Yale, August, 
 ## Features
 
 - 🔐 **Lock/Unlock Control** - Control your smart locks directly from HomeKit
-- 🔋 **Battery Monitoring** - Track battery levels with low battery alerts
+- 🔋 **Battery Monitoring** - Track battery levels with low battery alerts and 1-hour caching
 - 🚪 **Door Sensor** - Monitor door open/closed status (if supported by device)
-- 🔄 **Real-time Updates** - Optional webhook support for instant state synchronization
+- 🔄 **Real-time Updates** - Automatic webhook management with instant state synchronization
+- 🛡️ **Secure Webhooks** - Random UUID paths and auto-generated secrets for security
 - ⚡ **Lightweight** - Written in pure JavaScript with zero external dependencies
 - 🎯 **Simple Setup** - Easy configuration through Homebridge UI
+- 🔧 **Auto Webhook Management** - Webhooks are created/deleted automatically
+- 📊 **Real Device Data** - Shows actual manufacturer, model, and serial number in HomeKit
+- 🚫 **Race Condition Protection** - Prevents multiple simultaneous lock commands
 
 ## Requirements
 
@@ -80,9 +84,9 @@ Add the following to your Homebridge `config.json`:
         "interval": 60
       },
       "webhooks": {
-        "enabled": false,
-        "port": 8080,
-        "path": "/webhook"
+        "enabled": true,
+        "url": "https://your-domain.com",
+        "port": 8080
       },
       "debug": false
     }
@@ -100,19 +104,109 @@ Add the following to your Homebridge `config.json`:
 | `devices[].name` | string | No | Device name | Custom name for the lock |
 | `polling.interval` | number | No | 60 | How often to poll for state updates (in seconds) |
 | `webhooks.enabled` | boolean | No | false | Enable webhook server |
-| `webhooks.port` | number | No | 8080 | Port for webhook server |
-| `webhooks.path` | string | No | /webhook | URL path for webhook endpoint |
+| `webhooks.url` | string | No | - | Base URL for webhook endpoint (HTTPS recommended) |
+| `webhooks.port` | number | No | 8080 | Port for webhook server (local testing) |
 | `debug` | boolean | No | false | Enable debug logging |
+
+**Note:** `webhooks.path` and `webhooks.secret` are auto-generated and managed by the plugin.
 
 ## Webhook Setup (Optional)
 
-Webhooks provide real-time state updates without constant polling:
+Webhooks provide real-time state updates without constant polling. The plugin automatically manages webhook creation and deletion.
 
-1. Enable webhooks in plugin configuration
-2. Set up port forwarding or use a service like ngrok to expose your webhook endpoint
-3. Register your webhook URL in Seam Console or the plugin will attempt to do it automatically
+### Quick Setup with ngrok (Recommended for Testing)
+
+1. Install ngrok: `npm install -g ngrok`
+2. Start ngrok: `ngrok http 8080`
+3. Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
+4. Enable webhooks in plugin configuration and set the URL
+5. The plugin will automatically create the webhook with a secure random path
+
+### Production Setup with HTTPS
+
+For production use, set up HTTPS webhooks using stunnel:
+
+#### 1. Install stunnel and certbot
+
+```bash
+sudo apt install stunnel4 certbot
+```
+
+#### 2. Get SSL certificate
+
+```bash
+# Open port 80 on your router and forward it to homebridge port 80
+sudo certbot certonly --standalone -d your-domain.com
+```
+
+#### 3. Configure stunnel
+
+Create `/etc/stunnel/homebridge.conf`:
+
+```ini
+pid = /var/run/stunnel-homebridge.pid
+[homebridge]
+accept = 443
+connect = 127.0.0.1:8080
+cert = /etc/letsencrypt/live/your-domain.com/fullchain.pem
+key = /etc/letsencrypt/live/your-domain.com/privkey.pem
+```
+
+#### 4. Start stunnel
+
+```bash
+sudo systemctl enable stunnel4
+sudo systemctl restart stunnel4
+```
+
+#### 5. Configure plugin
+
+Set webhook URL to `https://your-domain.com` in plugin configuration.
+
+### Webhook Features
+
+- **Automatic Management** - Webhooks are created/deleted automatically
+- **Secure Paths** - Each webhook gets a unique random UUID path
+- **Auto-generated Secrets** - Security secrets are generated automatically
+- **Persistent Configuration** - Webhook settings survive plugin updates
 
 **Note:** Without webhooks, the plugin uses polling (default: every 60 seconds) to check lock state.
+
+## Advanced Features
+
+### Automatic Webhook Management
+
+The plugin automatically handles webhook lifecycle:
+
+- **Creation** - Webhooks are created automatically when enabled
+- **Deletion** - Webhooks are deleted when disabled
+- **Persistence** - Webhook settings survive plugin updates
+- **Security** - Each webhook gets a unique random UUID path
+
+### Battery Caching
+
+Battery level is cached for 1 hour to reduce API calls:
+
+- **Efficient** - Reduces unnecessary API requests
+- **Accurate** - Fresh data when needed
+- **Configurable** - Cache timeout can be adjusted
+
+### Race Condition Protection
+
+Prevents multiple simultaneous lock commands:
+
+- **Command Queue** - Commands are queued and executed sequentially
+- **Timeout Protection** - Commands timeout after 15 seconds
+- **State Locking** - Prevents polling interference during commands
+
+### Real Device Information
+
+Shows actual device data in HomeKit:
+
+- **Manufacturer** - Real manufacturer name (e.g., "August", "Yale")
+- **Model** - Actual model name from device
+- **Serial Number** - Real serial number from device
+- **Firmware** - Device firmware version
 
 ## Supported Devices
 
@@ -131,8 +225,10 @@ For the full list, visit [Seam Supported Devices](https://docs.seam.co/latest/)
 Each lock will appear in HomeKit with:
 
 - **Lock Mechanism** - Lock/unlock control with current state
-- **Battery Service** - Battery level and low battery indicator
-- **Contact Sensor** - Door open/closed status (if supported)
+- **Battery Service** - Battery level and low battery indicator with 1-hour caching
+- **Accessory Information** - Real device data (manufacturer, model, serial number, firmware)
+- **Race Condition Protection** - Prevents multiple simultaneous commands
+- **Real-time Updates** - Instant state synchronization via webhooks
 
 ## Troubleshooting
 
@@ -152,12 +248,28 @@ Each lock will appear in HomeKit with:
 
 - Ensure webhook port is accessible from the internet
 - Check firewall and router port forwarding settings
-- Verify webhook is registered in Seam Console
+- Verify webhook URL is correct and accessible
+- Check plugin logs for webhook registration status
+- For HTTPS setup, ensure SSL certificate is valid
+
+### Device data not showing
+
+- Enable debug logging to see device information extraction
+- Check if device provides manufacturer/model data in Seam Console
+- Some devices may not have complete information
 
 ### Low battery not showing
 
 - Some locks don't report battery level
 - Check if battery level is available in Seam Console
+- Battery data is cached for 1 hour to reduce API calls
+
+### Lock commands not working
+
+- Check if device is online in Seam Console
+- Verify API key has proper permissions
+- Enable debug logging to see command execution
+- Check for race conditions (multiple simultaneous commands)
 
 ## Support
 

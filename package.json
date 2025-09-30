@@ -1,7 +1,7 @@
 {
-  "name": "homebridge-seam",
+  "name": "@350d/homebridge-seam",
   "displayName": "Homebridge Seam",
-  "version": "1.0.0",
+  "version": "2.9.9",
   "description": "Homebridge plugin for smart locks via Seam.co API",
   "main": "index.js",
   "keywords": [
@@ -18,11 +18,17 @@
     "node": ">=14.18.1",
     "homebridge": ">=1.3.5"
   },
+  "homebridge": {
+    "pluginName": "@350d/homebridge-seam",
+    "platforms": [
+      "SeamLock"
+    ]
+  },
   "author": "Vladimir Sobolev",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/350d/homebridge-seam.git"
+    "url": "git+https://github.com/350d/homebridge-seam.git"
   },
   "bugs": {
     "url": "https://github.com/350d/homebridge-seam/issues"

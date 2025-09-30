@@ -43,32 +43,44 @@
           }
         }
       },
-      "webhooks": {
-        "title": "Webhook Settings",
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "title": "Enable Webhooks",
-            "type": "boolean",
-            "default": false,
-            "description": "Enable webhook server for real-time state updates"
-          },
-          "port": {
-            "title": "Webhook Port",
-            "type": "number",
-            "default": 8080,
-            "minimum": 1024,
-            "maximum": 65535,
-            "description": "Port for webhook server (requires port forwarding)"
-          },
-          "path": {
-            "title": "Webhook Path",
-            "type": "string",
-            "default": "/webhook",
-            "description": "URL path for webhook endpoint"
-          }
-        }
-      },
+              "webhooks": {
+                "title": "Webhook Settings",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "title": "Enable Webhooks",
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable webhook server for real-time state updates"
+                  },
+                  "url": {
+                    "title": "Webhook URL",
+                    "type": "string",
+                    "placeholder": "https://your-domain.com",
+                    "description": "Base URL for webhook endpoint (use ngrok or configure port forwarding). Path will be generated automatically."
+                  },
+                  "port": {
+                    "title": "Webhook Port",
+                    "type": "number",
+                    "default": 8080,
+                    "minimum": 1024,
+                    "maximum": 65535,
+                    "description": "Port for webhook server (for local testing)"
+                  },
+                  "path": {
+                    "title": "Webhook Path",
+                    "type": "string",
+                    "default": "",
+                    "description": "Generated webhook path (auto-managed)"
+                  },
+                  "secret": {
+                    "title": "Webhook Secret",
+                    "type": "string",
+                    "default": "",
+                    "description": "Generated webhook secret (auto-managed)"
+                  }
+                }
+              },
       "polling": {
         "title": "Polling Settings",
         "type": "object",
@@ -126,15 +138,15 @@
       "expandable": true,
       "expanded": false,
       "items": [
-        {
-          "type": "section",
-          "title": "Webhook Configuration",
-          "items": [
-            "webhooks.enabled",
-            "webhooks.port",
-            "webhooks.path"
-          ]
-        },
+                {
+                  "type": "section",
+                  "title": "Webhook Configuration",
+                  "items": [
+                    "webhooks.enabled",
+                    "webhooks.url",
+                    "webhooks.port"
+                  ]
+                },
         {
           "type": "section",
           "title": "Polling Configuration",

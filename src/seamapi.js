@@ -22,6 +22,7 @@ class SeamAPI {
         port: 443,
         path: path,
         method: method,
+        timeout: 5000, // 5 second timeout
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
@@ -53,6 +54,11 @@ class SeamAPI {
 
       req.on('error', (error) => {
         reject(error);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
       });
 
       if (data) {
@@ -127,9 +133,16 @@ class SeamAPI {
   async getLockStatus(deviceId) {
     try {
       const device = await this.getDevice(deviceId);
+      
+      // Convert battery level from 0-1 to 0-100 if needed
+      let batteryLevel = device.properties?.battery_level || 100;
+      if (batteryLevel <= 1) {
+        batteryLevel = Math.round(batteryLevel * 100);
+      }
+      
       return {
         locked: device.properties?.locked || false,
-        battery_level: device.properties?.battery_level || 100,
+        battery_level: batteryLevel,
         online: device.properties?.online || false,
         door_open: device.properties?.door_open || false
       };

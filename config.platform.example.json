@@ -1,0 +1,23 @@
+{
+  "platforms": [
+    {
+      "platform": "SeamLock",
+      "name": "Seam Lock",
+      "apiKey": "your-seam-api-key-here",
+      "devices": [
+        {
+          "deviceId": "ca9535a9-cb15-4244-872d-67379dd61fa9",
+          "name": "Test Lock"
+        }
+      ],
+      "polling": {
+        "interval": 60
+      },
+      "webhooks": {
+        "enabled": true,
+        "url": "https://your-domain.com",
+        "port": 8080
+      }
+    }
+  ]
+}

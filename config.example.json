@@ -1,24 +1,10 @@
 {
-  "platforms": [
+  "accessories": [
     {
-      "platform": "SeamLock",
-      "name": "Seam Lock",
-      "apiKey": "seam_****_YOUR_API_KEY_HERE",
-      "devices": [
-        {
-          "deviceId": "device_****_YOUR_DEVICE_ID_HERE",
-          "name": "Front Door Lock"
-        }
-      ],
-      "polling": {
-        "interval": 60
-      },
-      "webhooks": {
-        "enabled": false,
-        "port": 8080,
-        "path": "/webhook"
-      },
-      "debug": false
+      "accessory": "SeamLock",
+      "name": "Test Lock",
+      "deviceId": "ca9535a9-cb15-4244-872d-67379dd61fa9",
+      "apiKey": "your-seam-api-key-here"
     }
   ]
 }
