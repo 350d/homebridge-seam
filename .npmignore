@@ -1,0 +1,11 @@
+node_modules/
+.vscode/
+.cursor/
+.git/
+.github/
+.DS_Store
+.gitignore
+*.log
+tmp/
+.env
+config.json

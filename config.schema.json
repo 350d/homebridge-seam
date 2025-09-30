@@ -1,0 +1,149 @@
+{
+  "pluginAlias": "SeamLock",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Homebridge plugin for smart locks via Seam.co API. Get your API key and device ID from [Seam Console](https://console.seam.co)",
+  "footerDisplay": "For help and support visit the [GitHub repository](https://github.com/350d/homebridge-seam)",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Platform Name",
+        "type": "string",
+        "default": "Seam Lock",
+        "required": true
+      },
+      "apiKey": {
+        "title": "Seam API Key",
+        "type": "string",
+        "required": true,
+        "placeholder": "seam_****",
+        "description": "Your Seam.co API key. Get it from Seam Console."
+      },
+      "devices": {
+        "title": "Devices",
+        "type": "array",
+        "required": true,
+        "items": {
+          "type": "object",
+          "properties": {
+            "deviceId": {
+              "title": "Device ID",
+              "type": "string",
+              "required": true,
+              "placeholder": "device_****",
+              "description": "Device ID from Seam.co"
+            },
+            "name": {
+              "title": "Custom Name",
+              "type": "string",
+              "placeholder": "Front Door",
+              "description": "Optional custom name for this lock"
+            }
+          }
+        }
+      },
+      "webhooks": {
+        "title": "Webhook Settings",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Enable Webhooks",
+            "type": "boolean",
+            "default": false,
+            "description": "Enable webhook server for real-time state updates"
+          },
+          "port": {
+            "title": "Webhook Port",
+            "type": "number",
+            "default": 8080,
+            "minimum": 1024,
+            "maximum": 65535,
+            "description": "Port for webhook server (requires port forwarding)"
+          },
+          "path": {
+            "title": "Webhook Path",
+            "type": "string",
+            "default": "/webhook",
+            "description": "URL path for webhook endpoint"
+          }
+        }
+      },
+      "polling": {
+        "title": "Polling Settings",
+        "type": "object",
+        "properties": {
+          "interval": {
+            "title": "Polling Interval",
+            "type": "number",
+            "default": 60,
+            "minimum": 30,
+            "maximum": 300,
+            "description": "How often to check lock state (in seconds). Default: 60"
+          }
+        }
+      },
+      "debug": {
+        "title": "Enable Debug Logging",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable verbose debug logging"
+      }
+    }
+  },
+  "layout": [
+    {
+      "type": "section",
+      "title": "Seam API Configuration",
+      "expandable": false,
+      "expanded": true,
+      "items": [
+        "name",
+        "apiKey"
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Devices",
+      "expandable": false,
+      "expanded": true,
+      "items": [
+        {
+          "key": "devices",
+          "type": "array",
+          "orderable": false,
+          "buttonText": "Add Device",
+          "items": [
+            "devices[].deviceId",
+            "devices[].name"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Advanced Settings",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        {
+          "type": "section",
+          "title": "Webhook Configuration",
+          "items": [
+            "webhooks.enabled",
+            "webhooks.port",
+            "webhooks.path"
+          ]
+        },
+        {
+          "type": "section",
+          "title": "Polling Configuration",
+          "items": [
+            "polling.interval"
+          ]
+        },
+        "debug"
+      ]
+    }
+  ]
+}
