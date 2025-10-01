@@ -86,9 +86,6 @@ class SeamPlatform {
     this.log.info('Discovering devices...');
 
     try {
-      // Update cached accessories with fresh device info first
-      await this.updateCachedAccessories();
-
       // Setup each configured device
       for (const deviceConfig of this.config.devices) {
         await this.setupDevice(deviceConfig);
@@ -247,69 +244,6 @@ class SeamPlatform {
       } catch (error) {
         this.log.error(`Failed to poll device ${accessory.name}:`, error.message);
         // Don't update state on error to avoid "no response"
-      }
-    }
-  }
-
-  /**
-   * Update cached accessories with fresh device info
-   */
-  async updateCachedAccessories() {
-    for (const [uuid, platformAccessory] of this.platformAccessories) {
-      // Check if this device is in the current configuration
-      const isInConfig = this.config.devices.some(deviceConfig => 
-        deviceConfig.deviceId === platformAccessory.context.deviceId
-      );
-      
-      // Skip if device is in current configuration (will be updated during setup)
-      if (isInConfig) {
-        this.log.debug(`Skipping cached accessory ${platformAccessory.displayName} - will be updated during device setup`);
-        continue;
-      }
-
-      try {
-        this.log.info(`Updating device info for cached accessory: ${platformAccessory.displayName}`);
-        
-        // Get fresh device data from API
-        const device = await this.seamAPI.getDevice(platformAccessory.context.deviceId);
-        if (!device) {
-          this.log.warn(`Device ${platformAccessory.context.deviceId} not found, skipping cached accessory update`);
-          continue;
-        }
-
-        // Create temporary accessory to extract device info
-        const tempAccessory = new LockAccessory(this, device, {
-          deviceId: platformAccessory.context.deviceId,
-          name: platformAccessory.displayName
-        });
-        
-        // Load device info
-        await tempAccessory.updateDeviceInfo();
-        
-        // Update HomeKit characteristics directly on the platform accessory
-        const informationService = platformAccessory.getService(this.api.hap.Service.AccessoryInformation);
-        if (informationService) {
-          informationService
-            .getCharacteristic(this.api.hap.Characteristic.Manufacturer)
-            .updateValue(tempAccessory.deviceInfo.manufacturer);
-          informationService
-            .getCharacteristic(this.api.hap.Characteristic.Model)
-            .updateValue(tempAccessory.deviceInfo.model);
-          informationService
-            .getCharacteristic(this.api.hap.Characteristic.SerialNumber)
-            .updateValue(tempAccessory.deviceInfo.serialNumber);
-          informationService
-            .getCharacteristic(this.api.hap.Characteristic.FirmwareRevision)
-            .updateValue(tempAccessory.deviceInfo.firmwareVersion);
-          
-          this.log.info(`Updated HomeKit characteristics for ${platformAccessory.displayName}: ${tempAccessory.deviceInfo.manufacturer} ${tempAccessory.deviceInfo.model} (SN: ${tempAccessory.deviceInfo.serialNumber})`);
-        } else {
-          this.log.warn(`Information service not found for ${platformAccessory.displayName}`);
-        }
-        
-        this.log.info(`Updated device info for cached accessory: ${platformAccessory.displayName}`);
-      } catch (error) {
-        this.log.error(`Failed to update cached accessory ${platformAccessory.displayName}:`, error.message);
       }
     }
   }
