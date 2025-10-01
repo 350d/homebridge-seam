@@ -86,6 +86,9 @@ class SeamPlatform {
     this.log.info('Discovering devices...');
 
     try {
+      // Update cached accessories with fresh device info first
+      await this.updateCachedAccessories();
+
       // Setup each configured device
       for (const deviceConfig of this.config.devices) {
         await this.setupDevice(deviceConfig);
@@ -95,9 +98,6 @@ class SeamPlatform {
       this.startPolling();
 
       this.log.info(`Configured ${this.accessories.length} device(s)`);
-
-      // Update cached accessories with fresh device info
-      await this.updateCachedAccessories();
 
       // Start webhook server if enabled (after devices are configured)
       if (this.config.webhooks && this.config.webhooks.enabled) {
@@ -256,11 +256,6 @@ class SeamPlatform {
    */
   async updateCachedAccessories() {
     for (const [uuid, platformAccessory] of this.platformAccessories) {
-      // Skip if this accessory is already configured
-      if (this.accessories.some(acc => acc.deviceId === platformAccessory.context.deviceId)) {
-        continue;
-      }
-
       try {
         this.log.info(`Updating device info for cached accessory: ${platformAccessory.displayName}`);
         
@@ -280,8 +275,26 @@ class SeamPlatform {
         // Load device info
         await tempAccessory.updateDeviceInfo();
         
-        // Update HomeKit characteristics
-        tempAccessory.updateHomeKitCharacteristics();
+        // Update HomeKit characteristics directly on the platform accessory
+        const informationService = platformAccessory.getService(this.api.hap.Service.AccessoryInformation);
+        if (informationService) {
+          informationService
+            .getCharacteristic(this.api.hap.Characteristic.Manufacturer)
+            .updateValue(tempAccessory.deviceInfo.manufacturer);
+          informationService
+            .getCharacteristic(this.api.hap.Characteristic.Model)
+            .updateValue(tempAccessory.deviceInfo.model);
+          informationService
+            .getCharacteristic(this.api.hap.Characteristic.SerialNumber)
+            .updateValue(tempAccessory.deviceInfo.serialNumber);
+          informationService
+            .getCharacteristic(this.api.hap.Characteristic.FirmwareRevision)
+            .updateValue(tempAccessory.deviceInfo.firmwareVersion);
+          
+          this.log.info(`Updated HomeKit characteristics for ${platformAccessory.displayName}: ${tempAccessory.deviceInfo.manufacturer} ${tempAccessory.deviceInfo.model} (SN: ${tempAccessory.deviceInfo.serialNumber})`);
+        } else {
+          this.log.warn(`Information service not found for ${platformAccessory.displayName}`);
+        }
         
         this.log.info(`Updated device info for cached accessory: ${platformAccessory.displayName}`);
       } catch (error) {
