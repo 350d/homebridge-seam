@@ -137,12 +137,12 @@ class LockAccessory {
   /**
    * Update device info cache
    */
-  updateDeviceInfoCache(deviceData) {
-    this.deviceInfo.name = deviceData.name || this.deviceInfo.name;
-    this.deviceInfo.manufacturer = deviceData.manufacturer || this.deviceInfo.manufacturer;
-    this.deviceInfo.model = deviceData.model || this.deviceInfo.model;
-    this.deviceInfo.serialNumber = deviceData.serial_number || this.deviceInfo.serialNumber;
-    this.deviceInfo.firmwareVersion = deviceData.firmware_version || this.deviceInfo.firmwareVersion;
+  updateDeviceInfoCache(info) {
+    this.deviceInfo.name = info.name || this.deviceInfo.name;
+    this.deviceInfo.manufacturer = info.manufacturer || this.deviceInfo.manufacturer;
+    this.deviceInfo.model = info.model || this.deviceInfo.model;
+    this.deviceInfo.serialNumber = info.serialNumber || this.deviceInfo.serialNumber;
+    this.deviceInfo.firmwareVersion = info.firmwareVersion || this.deviceInfo.firmwareVersion;
     this.deviceInfo.lastUpdated = Date.now();
     this.debugLog(`Device info cache updated: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
   }
@@ -208,8 +208,8 @@ class LockAccessory {
       }
       
       this.platform.log.info(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.platform.log.info(`Raw API response: ${JSON.stringify(deviceData, null, 2)}`);
-      this.platform.log.info(`Extracted info: ${JSON.stringify(info, null, 2)}`);
+      this.platform.log.info(`Raw API response:`, JSON.stringify(deviceData, null, 2));
+      this.platform.log.info(`Extracted info:`, JSON.stringify(info, null, 2));
       
       // Check if device supports door sensor
       this.checkDoorSensorSupport(deviceData);

@@ -77,7 +77,6 @@ class SeamAPI {
       const response = await this._request('POST', '/devices/get', {
         device_id: deviceId
       });
-      this.log.info(`SeamAPI getDevice response: ${JSON.stringify(response, null, 2)}`);
       return response.device;
     } catch (error) {
       this.log.error(`Failed to get device ${deviceId}:`, error.message);
