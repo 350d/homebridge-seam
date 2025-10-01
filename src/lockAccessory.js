@@ -128,7 +128,7 @@ class LockAccessory {
     
     if (supportsDoorSensor !== this.supportsDoorSensor) {
       this.supportsDoorSensor = supportsDoorSensor;
-      this.platform.log.info(`${this.name} door sensor support: ${supportsDoorSensor ? 'YES' : 'NO'}`);
+      this.platform.log.debug(`${this.name} door sensor support: ${supportsDoorSensor ? 'YES' : 'NO'}`);
     }
     
     this.debugLog(`Device capabilities:`, capabilities);
@@ -276,13 +276,13 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.ContactSensorState)
         .onGet(this.getContactSensorState.bind(this));
       
-      this.platform.log.info(`${this.name} door sensor enabled`);
+      this.platform.log.debug(`${this.name} door sensor enabled`);
     } else {
       this.contactService = null;
-      this.platform.log.info(`${this.name} door sensor not supported by device`);
+      this.platform.log.debug(`${this.name} door sensor not supported by device`);
     }
 
-    this.platform.log.info(`Lock accessory setup completed: ${this.name}`);
+    this.platform.log.debug(`Lock accessory setup completed: ${this.name}`);
   }
 
   /**
@@ -405,7 +405,7 @@ class LockAccessory {
       this.platform.log.warn(`Command already in progress for ${this.name}, waiting for completion...`);
       try {
         await this.commandPromise;
-        this.platform.log.info(`Previous command completed for ${this.name}`);
+        this.platform.log.debug(`Previous command completed for ${this.name}`);
       } catch (error) {
         this.platform.log.error(`Previous command failed for ${this.name}:`, error.message);
         throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -623,7 +623,7 @@ class LockAccessory {
    * Force refresh device info
    */
   async refreshDeviceInfo() {
-    this.platform.log.info(`Refreshing device info for ${this.name}...`);
+    this.platform.log.debug(`Refreshing device info for ${this.name}...`);
     await this.updateDeviceInfo();
     this.updateHomeKitCharacteristics();
   }

@@ -197,7 +197,7 @@ class WebhookServer {
     const eventType = payload.event_type;
     const deviceId = payload.device_id;
 
-    this.platform.log.info(`Webhook event: ${eventType} for device ${deviceId}`);
+    this.platform.log.debug(`Webhook event: ${eventType} for device ${deviceId}`);
 
     // Find accessory
     const accessory = this.platform.accessories.find(acc => acc.deviceId === deviceId);
@@ -218,7 +218,7 @@ class WebhookServer {
       
       case 'device.connected':
         accessory.updateState({ online: true });
-        this.platform.log.info(`Device ${deviceId} connected`);
+        this.platform.log.debug(`Device ${deviceId} connected`);
         break;
       
       case 'device.disconnected':
@@ -236,14 +236,14 @@ class WebhookServer {
       case 'device.battery_status_changed':
         if (payload.battery_level) {
           accessory.updateState({ battery_level: payload.battery_level });
-          this.platform.log.info(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
+          this.platform.log.debug(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
         }
         break;
       
       case 'device.door_opened':
         if (accessory.supportsDoorSensor) {
           accessory.updateState({ door_open: true });
-          this.platform.log.info(`Device ${deviceId} door opened`);
+          this.platform.log.debug(`Device ${deviceId} door opened`);
         } else {
           this.platform.log.debug(`Device ${deviceId} door opened event ignored (door sensor not supported)`);
         }
@@ -252,7 +252,7 @@ class WebhookServer {
       case 'device.door_closed':
         if (accessory.supportsDoorSensor) {
           accessory.updateState({ door_open: false });
-          this.platform.log.info(`Device ${deviceId} door closed`);
+          this.platform.log.debug(`Device ${deviceId} door closed`);
         } else {
           this.platform.log.debug(`Device ${deviceId} door closed event ignored (door sensor not supported)`);
         }
@@ -291,9 +291,9 @@ class WebhookServer {
     
     if (supportsDoorSensor) {
       baseEvents.push('device.door_opened', 'device.door_closed');
-      this.platform.log.info('Door sensor events enabled (device supports door sensor)');
+      this.platform.log.debug('Door sensor events enabled (device supports door sensor)');
     } else {
-      this.platform.log.info('Door sensor events disabled (no devices support door sensor)');
+      this.platform.log.debug('Door sensor events disabled (no devices support door sensor)');
     }
     
     return baseEvents;
@@ -310,7 +310,7 @@ class WebhookServer {
       
       if (existingWebhook) {
         this.webhookId = existingWebhook.webhook_id;
-        this.platform.log.info(`Using existing webhook: ${this.webhookId}`);
+        this.platform.log.debug(`Using existing webhook: ${this.webhookId}`);
         this.platform.log.debug(`Webhook URL: ${this.webhookUrl}`);
         this.platform.log.debug(`Webhook secret: ${this.secret.substring(0, 8)}...`);
         return;
@@ -392,7 +392,7 @@ class WebhookServer {
     if (this.webhookId) {
       try {
         await this.platform.seamAPI.deleteWebhook(this.webhookId);
-        this.platform.log.info(`Webhook ${this.webhookId} deleted from Seam`);
+        this.platform.log.debug(`Webhook ${this.webhookId} deleted from Seam`);
         this.webhookId = null;
         return true;
       } catch (error) {
