@@ -208,7 +208,8 @@ class LockAccessory {
       }
       
       this.platform.log.info(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.debugLog('Full extracted device info:', JSON.stringify(info, null, 2));
+      this.platform.log.info(`Raw API response:`, JSON.stringify(deviceData, null, 2));
+      this.platform.log.info(`Extracted info:`, JSON.stringify(info, null, 2));
       
       // Check if device supports door sensor
       this.checkDoorSensorSupport(deviceData);
@@ -236,6 +237,8 @@ class LockAccessory {
     await this.updateDeviceInfo();
     
     // Accessory Information Service with real data
+    this.platform.log.info(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
+    
     this.informationService = new this.Service.AccessoryInformation()
       .setCharacteristic(this.Characteristic.Manufacturer, this.deviceInfo.manufacturer)
       .setCharacteristic(this.Characteristic.Model, this.deviceInfo.model)
