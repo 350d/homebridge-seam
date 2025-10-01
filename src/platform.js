@@ -256,6 +256,17 @@ class SeamPlatform {
    */
   async updateCachedAccessories() {
     for (const [uuid, platformAccessory] of this.platformAccessories) {
+      // Check if this device is in the current configuration
+      const isInConfig = this.config.devices.some(deviceConfig => 
+        deviceConfig.deviceId === platformAccessory.context.deviceId
+      );
+      
+      // Skip if device is in current configuration (will be updated during setup)
+      if (isInConfig) {
+        this.log.debug(`Skipping cached accessory ${platformAccessory.displayName} - will be updated during device setup`);
+        continue;
+      }
+
       try {
         this.log.info(`Updating device info for cached accessory: ${platformAccessory.displayName}`);
         

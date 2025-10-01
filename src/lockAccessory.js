@@ -207,9 +207,9 @@ class LockAccessory {
         info.model = info.model.display_name || info.model.name || 'Smart Lock';
       }
       
-      this.platform.log.info(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.platform.log.info(`Raw API response:`, JSON.stringify(deviceData, null, 2));
-      this.platform.log.info(`Extracted info:`, JSON.stringify(info, null, 2));
+      this.platform.log.debug(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
+      this.platform.log.debug(`Raw API response:`, JSON.stringify(deviceData, null, 2));
+      this.platform.log.debug(`Extracted info:`, JSON.stringify(info, null, 2));
       
       // Check if device supports door sensor
       this.checkDoorSensorSupport(deviceData);
@@ -225,7 +225,7 @@ class LockAccessory {
       this.platform.log.debug(`Device info loaded: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
     } catch (error) {
       this.platform.log.error(`Failed to load device info:`, error.message);
-      this.platform.log.info(`Using default device info: ${this.deviceInfo.name}`);
+      this.platform.log.debug(`Using default device info: ${this.deviceInfo.name}`);
     }
   }
 
@@ -237,7 +237,7 @@ class LockAccessory {
     await this.updateDeviceInfo();
     
     // Accessory Information Service with real data
-    this.platform.log.info(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
+    this.platform.log.debug(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
     
     this.informationService = new this.Service.AccessoryInformation()
       .setCharacteristic(this.Characteristic.Manufacturer, this.deviceInfo.manufacturer)
@@ -398,7 +398,7 @@ class LockAccessory {
   async setLockTargetState(value) {
     const shouldLock = value === this.Characteristic.LockTargetState.SECURED;
     
-    this.platform.log.info(`HomeKit requested to ${shouldLock ? 'lock' : 'unlock'} ${this.name} (value: ${value})`);
+    this.platform.log.debug(`HomeKit requested to ${shouldLock ? 'lock' : 'unlock'} ${this.name} (value: ${value})`);
     
     // Check if command is already in progress
     if (this.isCommandInProgress) {
@@ -456,7 +456,7 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(lockState);
       
-      this.platform.log.info(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
+      this.platform.log.debug(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
       
       // Add small delay to allow API to update before polling can interfere
       await new Promise(resolve => setTimeout(resolve, 2000));
