@@ -208,8 +208,8 @@ class LockAccessory {
       }
       
       this.platform.log.info(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.platform.log.info(`Raw API response:`, JSON.stringify(deviceData, null, 2));
-      this.platform.log.info(`Extracted info:`, JSON.stringify(info, null, 2));
+      this.platform.log.info(`Raw API response: ${JSON.stringify(deviceData, null, 2)}`);
+      this.platform.log.info(`Extracted info: ${JSON.stringify(info, null, 2)}`);
       
       // Check if device supports door sensor
       this.checkDoorSensorSupport(deviceData);
