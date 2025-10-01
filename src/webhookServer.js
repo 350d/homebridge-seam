@@ -20,6 +20,15 @@ class WebhookServer {
   }
 
   /**
+   * Debug logging helper - checks plugin debug setting
+   */
+  debugLog(message, ...args) {
+    if (this.platform.config.debug) {
+      this.platform.log.info(`[DEBUG] ${message}`, ...args);
+    }
+  }
+
+  /**
    * Generate webhook secret
    */
   generateSecret() {
@@ -75,7 +84,7 @@ class WebhookServer {
    * Start webhook server
    */
   async start() {
-    this.platform.log.debug(`Webhook server config: enabled=${this.config.enabled}, port=${this.port}, baseUrl=${this.config.url || 'not configured'}`);
+    this.debugLog(`Webhook server config: enabled=${this.config.enabled}, port=${this.port}, baseUrl=${this.config.url || 'not configured'}`);
     
     if (!this.config.enabled) {
       this.platform.log.info('Webhook server is disabled in config');
@@ -97,8 +106,8 @@ class WebhookServer {
       // Always generate new path/secret when starting (for security)
       this.path = this.generatePath();
       this.secret = this.generateSecret();
-      this.platform.log.debug(`Generated new webhook path: ${this.path}`);
-      this.platform.log.debug(`Generated new webhook secret: ${this.secret}`);
+      this.debugLog(`Generated new webhook path: ${this.path}`);
+      this.debugLog(`Generated new webhook secret: ${this.secret}`);
       
       // Construct full URL
       this.webhookUrl = this.config.url + this.path;
@@ -120,7 +129,7 @@ class WebhookServer {
       });
 
       this.platform.log.info(`Webhook server started on port ${this.port}`);
-      this.platform.log.debug(`Webhook path: ${this.path}`);
+      this.debugLog(`Webhook path: ${this.path}`);
 
       // Register webhook with Seam
       await this.registerWebhook();
@@ -134,11 +143,11 @@ class WebhookServer {
    * Handle incoming HTTP request
    */
   handleRequest(req, res) {
-    this.platform.log.debug(`Webhook request: ${req.method} ${req.url} from ${req.connection.remoteAddress}`);
+    this.debugLog(`Webhook request: ${req.method} ${req.url} from ${req.connection.remoteAddress}`);
     
     // Only handle POST requests to webhook path
     if (req.method !== 'POST' || req.url !== this.path) {
-      this.platform.log.debug(`Webhook request rejected: ${req.method} ${req.url} (expected POST ${this.path})`);
+      this.debugLog(`Webhook request rejected: ${req.method} ${req.url} (expected POST ${this.path})`);
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
       return;
@@ -153,7 +162,7 @@ class WebhookServer {
     req.on('end', () => {
             try {
                 // Log headers for debugging
-                this.platform.log.debug('Webhook headers:', JSON.stringify(req.headers, null, 2));
+                this.debugLog('Webhook headers:', JSON.stringify(req.headers, null, 2));
                 
                 // Verify webhook signature (optional for now)
                 const signature = req.headers['x-seam-signature'] || req.headers['x-hub-signature-256'];
@@ -163,11 +172,11 @@ class WebhookServer {
                   res.end(JSON.stringify({ error: 'Unauthorized' }));
                   return;
                 } else if (!signature) {
-                  this.platform.log.debug('Webhook received without signature (signature verification disabled)');
+                  this.debugLog('Webhook received without signature (signature verification disabled)');
                 }
 
         const payload = JSON.parse(body);
-        this.platform.log.debug('Webhook received:', payload);
+        this.debugLog('Webhook received:', payload);
 
         // Process webhook
         this.processWebhook(payload);
@@ -187,7 +196,7 @@ class WebhookServer {
    * Process webhook payload
    */
   processWebhook(payload) {
-    this.platform.log.debug(`Processing webhook payload:`, JSON.stringify(payload, null, 2));
+    this.debugLog(`Processing webhook payload:`, JSON.stringify(payload, null, 2));
     
     if (!payload || !payload.event_type) {
       this.platform.log.warn('Invalid webhook payload received');
@@ -197,7 +206,7 @@ class WebhookServer {
     const eventType = payload.event_type;
     const deviceId = payload.device_id;
 
-    this.platform.log.debug(`Webhook event: ${eventType} for device ${deviceId}`);
+    this.debugLog(`Webhook event: ${eventType} for device ${deviceId}`);
 
     // Find accessory
     const accessory = this.platform.accessories.find(acc => acc.deviceId === deviceId);
@@ -220,7 +229,7 @@ class WebhookServer {
       
       case 'device.connected':
         accessory.updateState({ online: true });
-        this.platform.log.debug(`Device ${deviceId} connected`);
+        this.debugLog(`Device ${deviceId} connected`);
         break;
       
       case 'device.disconnected':
@@ -238,25 +247,25 @@ class WebhookServer {
       case 'device.battery_status_changed':
         if (payload.battery_level) {
           accessory.updateState({ battery_level: payload.battery_level });
-          this.platform.log.debug(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
+          this.debugLog(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
         }
         break;
       
       case 'device.door_opened':
         if (accessory.supportsDoorSensor) {
           accessory.updateState({ door_open: true });
-          this.platform.log.debug(`Device ${deviceId} door opened`);
+          this.debugLog(`Device ${deviceId} door opened`);
         } else {
-          this.platform.log.debug(`Device ${deviceId} door opened event ignored (door sensor not supported)`);
+          this.debugLog(`Device ${deviceId} door opened event ignored (door sensor not supported)`);
         }
         break;
       
       case 'device.door_closed':
         if (accessory.supportsDoorSensor) {
           accessory.updateState({ door_open: false });
-          this.platform.log.debug(`Device ${deviceId} door closed`);
+          this.debugLog(`Device ${deviceId} door closed`);
         } else {
-          this.platform.log.debug(`Device ${deviceId} door closed event ignored (door sensor not supported)`);
+          this.debugLog(`Device ${deviceId} door closed event ignored (door sensor not supported)`);
         }
         break;
       
@@ -269,7 +278,7 @@ class WebhookServer {
         break;
       
       default:
-        this.platform.log.debug(`Unhandled webhook event type: ${eventType}`);
+        this.debugLog(`Unhandled webhook event type: ${eventType}`);
     }
   }
 
@@ -293,9 +302,9 @@ class WebhookServer {
     
     if (supportsDoorSensor) {
       baseEvents.push('device.door_opened', 'device.door_closed');
-      this.platform.log.debug('Door sensor events enabled (device supports door sensor)');
+      this.debugLog('Door sensor events enabled (device supports door sensor)');
     } else {
-      this.platform.log.debug('Door sensor events disabled (no devices support door sensor)');
+      this.debugLog('Door sensor events disabled (no devices support door sensor)');
     }
     
     return baseEvents;
@@ -312,9 +321,9 @@ class WebhookServer {
       
       if (existingWebhook) {
         this.webhookId = existingWebhook.webhook_id;
-        this.platform.log.debug(`Using existing webhook: ${this.webhookId}`);
-        this.platform.log.debug(`Webhook URL: ${this.webhookUrl}`);
-        this.platform.log.debug(`Webhook secret: ${this.secret.substring(0, 8)}...`);
+        this.debugLog(`Using existing webhook: ${this.webhookId}`);
+        this.debugLog(`Webhook URL: ${this.webhookUrl}`);
+        this.debugLog(`Webhook secret: ${this.secret.substring(0, 8)}...`);
         return;
       }
 
@@ -324,14 +333,14 @@ class WebhookServer {
       // Determine supported events based on device capabilities
       const eventTypes = this.getSupportedWebhookEvents();
       
-      this.platform.log.debug(`Registering webhook with events: ${eventTypes.join(', ')}`);
+      this.debugLog(`Registering webhook with events: ${eventTypes.join(', ')}`);
       
       const webhook = await this.platform.seamAPI.createWebhook(this.webhookUrl, eventTypes);
       
       this.webhookId = webhook.webhook_id;
       this.platform.log.info(`Webhook registered with Seam: ${this.webhookId}`);
-      this.platform.log.debug(`Webhook URL: ${this.webhookUrl}`);
-      this.platform.log.debug(`Webhook secret: ${this.secret}`);
+      this.debugLog(`Webhook URL: ${this.webhookUrl}`);
+      this.debugLog(`Webhook secret: ${this.secret}`);
       
       // Save the new configuration
       this.platform.saveWebhookConfig(this.path, this.secret);
@@ -352,15 +361,15 @@ class WebhookServer {
         if (webhook.url && this.config.url && webhook.url.startsWith(this.config.url)) {
           try {
             await this.platform.seamAPI.deleteWebhook(webhook.webhook_id);
-            this.platform.log.debug(`Deleted existing webhook: ${webhook.webhook_id}`);
+            this.debugLog(`Deleted existing webhook: ${webhook.webhook_id}`);
           } catch (deleteError) {
-            this.platform.log.debug(`Failed to delete webhook ${webhook.webhook_id}:`, deleteError.message);
+            this.debugLog(`Failed to delete webhook ${webhook.webhook_id}:`, deleteError.message);
           }
         }
       }
     } catch (error) {
       // Don't log as error during cleanup - API might be unavailable
-      this.platform.log.debug('Webhook cleanup skipped (API unavailable):', error.message);
+      this.debugLog('Webhook cleanup skipped (API unavailable):', error.message);
     }
   }
 
@@ -399,7 +408,7 @@ class WebhookServer {
     if (this.webhookId) {
       try {
         await this.platform.seamAPI.deleteWebhook(this.webhookId);
-        this.platform.log.debug(`Webhook ${this.webhookId} deleted from Seam`);
+        this.debugLog(`Webhook ${this.webhookId} deleted from Seam`);
         this.webhookId = null;
         return true;
       } catch (error) {

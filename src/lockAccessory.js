@@ -49,11 +49,11 @@ class LockAccessory {
   }
 
   /**
-   * Debug logging helper
+   * Debug logging helper - checks plugin debug setting
    */
   debugLog(message, ...args) {
-    if (this.platform.log.debug) {
-      this.platform.log.debug(message, ...args);
+    if (this.platform.config.debug) {
+      this.platform.log.info(`[DEBUG] ${message}`, ...args);
     }
   }
 
@@ -128,7 +128,7 @@ class LockAccessory {
     
     if (supportsDoorSensor !== this.supportsDoorSensor) {
       this.supportsDoorSensor = supportsDoorSensor;
-      this.platform.log.debug(`${this.name} door sensor support: ${supportsDoorSensor ? 'YES' : 'NO'}`);
+      this.debugLog(`${this.name} door sensor support: ${supportsDoorSensor ? 'YES' : 'NO'}`);
     }
     
     this.debugLog(`Device capabilities:`, capabilities);
@@ -207,9 +207,9 @@ class LockAccessory {
         info.model = info.model.display_name || info.model.name || 'Smart Lock';
       }
       
-      this.platform.log.debug(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.platform.log.debug(`Raw API response:`, JSON.stringify(deviceData, null, 2));
-      this.platform.log.debug(`Extracted info:`, JSON.stringify(info, null, 2));
+      this.debugLog(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
+      this.debugLog(`Raw API response:`, JSON.stringify(deviceData, null, 2));
+      this.debugLog(`Extracted info:`, JSON.stringify(info, null, 2));
       
       // Check if device supports door sensor
       this.checkDoorSensorSupport(deviceData);
@@ -219,13 +219,13 @@ class LockAccessory {
       // Update name if it changed
       if (info.name !== this.name) {
         this.name = info.name;
-        this.platform.log.debug(`Device name updated to: ${this.name}`);
+        this.debugLog(`Device name updated to: ${this.name}`);
       }
       
-      this.platform.log.debug(`Device info loaded: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
+      this.debugLog(`Device info loaded: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
     } catch (error) {
       this.platform.log.error(`Failed to load device info:`, error.message);
-      this.platform.log.debug(`Using default device info: ${this.deviceInfo.name}`);
+      this.debugLog(`Using default device info: ${this.deviceInfo.name}`);
     }
   }
 
@@ -237,7 +237,7 @@ class LockAccessory {
     await this.updateDeviceInfo();
     
     // Accessory Information Service with real data
-    this.platform.log.debug(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
+    this.debugLog(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
     
     this.informationService = new this.Service.AccessoryInformation()
       .setCharacteristic(this.Characteristic.Manufacturer, this.deviceInfo.manufacturer)
@@ -276,13 +276,13 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.ContactSensorState)
         .onGet(this.getContactSensorState.bind(this));
       
-      this.platform.log.debug(`${this.name} door sensor enabled`);
+      this.debugLog(`${this.name} door sensor enabled`);
     } else {
       this.contactService = null;
-      this.platform.log.debug(`${this.name} door sensor not supported by device`);
+      this.debugLog(`${this.name} door sensor not supported by device`);
     }
 
-    this.platform.log.debug(`Lock accessory setup completed: ${this.name}`);
+    this.debugLog(`Lock accessory setup completed: ${this.name}`);
   }
 
   /**
@@ -404,14 +404,14 @@ class LockAccessory {
   async setLockTargetState(value) {
     const shouldLock = value === this.Characteristic.LockTargetState.SECURED;
     
-    this.platform.log.debug(`HomeKit requested to ${shouldLock ? 'lock' : 'unlock'} ${this.name} (value: ${value})`);
+    this.debugLog(`HomeKit requested to ${shouldLock ? 'lock' : 'unlock'} ${this.name} (value: ${value})`);
     
     // Check if command is already in progress
     if (this.isCommandInProgress) {
       this.platform.log.warn(`Command already in progress for ${this.name}, waiting for completion...`);
       try {
         await this.commandPromise;
-        this.platform.log.debug(`Previous command completed for ${this.name}`);
+        this.debugLog(`Previous command completed for ${this.name}`);
       } catch (error) {
         this.platform.log.error(`Previous command failed for ${this.name}:`, error.message);
         throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -561,7 +561,7 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(lockState);
       
-      this.platform.log.debug(`${this.name} HomeKit characteristics updated successfully`);
+      this.debugLog(`${this.name} HomeKit characteristics updated successfully`);
     } else if (typeof state.locked === 'boolean') {
       this.debugLog(`${this.name} lock state unchanged: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
     }
@@ -584,7 +584,7 @@ class LockAccessory {
           ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
           : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
       
-      this.platform.log.debug(`${this.name} battery updated: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
+      this.debugLog(`${this.name} battery updated: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
     }
 
     // Update door state (only if device supports door sensor)
@@ -599,7 +599,7 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.ContactSensorState)
         .updateValue(contactState);
       
-      this.platform.log.debug(`${this.name} door state updated: ${this.isDoorOpen ? 'OPEN' : 'CLOSED'}`);
+      this.debugLog(`${this.name} door state updated: ${this.isDoorOpen ? 'OPEN' : 'CLOSED'}`);
     }
   }
 
@@ -636,7 +636,7 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.FirmwareRevision)
         .updateValue(this.deviceInfo.firmwareVersion);
       
-      this.platform.log.debug(`HomeKit characteristics updated: ${this.deviceInfo.manufacturer} ${this.deviceInfo.model} (${this.deviceInfo.serialNumber})`);
+      this.debugLog(`HomeKit characteristics updated: ${this.deviceInfo.manufacturer} ${this.deviceInfo.model} (${this.deviceInfo.serialNumber})`);
     } catch (error) {
       this.platform.log.error(`Failed to update HomeKit characteristics:`, error.message);
     }
@@ -646,7 +646,7 @@ class LockAccessory {
    * Force refresh device info
    */
   async refreshDeviceInfo() {
-    this.platform.log.debug(`Refreshing device info for ${this.name}...`);
+    this.debugLog(`Refreshing device info for ${this.name}...`);
     await this.updateDeviceInfo();
     this.updateHomeKitCharacteristics();
   }

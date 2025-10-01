@@ -52,6 +52,15 @@ class SeamPlatform {
   }
 
   /**
+   * Debug logging helper - checks plugin debug setting
+   */
+  debugLog(message, ...args) {
+    if (this.config.debug) {
+      this.log.info(`[DEBUG] ${message}`, ...args);
+    }
+  }
+
+  /**
    * Configure cached accessory (restored from disk)
    */
   configureAccessory(accessory) {
@@ -84,18 +93,18 @@ class SeamPlatform {
    */
   async discoverDevices() {
     this.log.info('Discovering devices...');
-    this.log.info(`Device configuration:`, this.config.devices);
+    this.debugLog(`Device configuration:`, this.config.devices);
 
     try {
       // Setup each configured device
       for (let i = 0; i < this.config.devices.length; i++) {
         const deviceConfig = this.config.devices[i];
-        this.log.info(`[${i + 1}/${this.config.devices.length}] Setting up device: ${deviceConfig.deviceId}`);
+        this.debugLog(`[${i + 1}/${this.config.devices.length}] Setting up device: ${deviceConfig.deviceId}`);
         await this.setupDevice(deviceConfig);
       }
 
       this.log.info(`Device setup completed. Total accessories: ${this.accessories.length}`);
-      this.log.info(`Accessories list:`, this.accessories.map(acc => ({ name: acc.name, deviceId: acc.deviceId })));
+      this.debugLog(`Accessories list:`, this.accessories.map(acc => ({ name: acc.name, deviceId: acc.deviceId })));
 
       // Start polling for state updates
       this.log.info('Starting polling for state updates...');
@@ -109,11 +118,11 @@ class SeamPlatform {
         this.webhookServer = new WebhookServer(this, this.config.webhooks);
         await this.webhookServer.start();
       } else {
-        this.log.info('Webhook server disabled in configuration');
+        this.debugLog('Webhook server disabled in configuration');
       }
     } catch (error) {
       this.log.error('Failed to discover devices:', error.message);
-      this.log.info('Error details:', error);
+      this.debugLog('Error details:', error);
     }
   }
 
@@ -127,7 +136,7 @@ class SeamPlatform {
         return;
       }
 
-      this.log.debug(`Setting up device: ${deviceConfig.deviceId}`);
+      this.debugLog(`Setting up device: ${deviceConfig.deviceId}`);
 
       // Get device info from Seam
       const device = await this.seamAPI.getDevice(deviceConfig.deviceId);
@@ -183,7 +192,7 @@ class SeamPlatform {
       const existingServices = platformAccessory.services.slice();
       for (const service of existingServices) {
         if (service.UUID !== this.api.hap.Service.AccessoryInformation.UUID) {
-          this.log.debug(`Removing existing service: ${service.UUID}`);
+          this.debugLog(`Removing existing service: ${service.UUID}`);
           platformAccessory.removeService(service);
         }
       }
@@ -191,7 +200,7 @@ class SeamPlatform {
       // Add new services
       for (let i = 1; i < services.length; i++) {
         const service = services[i];
-        this.log.debug(`Adding service: ${service.UUID} (${service.displayName})`);
+        this.debugLog(`Adding service: ${service.UUID} (${service.displayName})`);
         platformAccessory.addService(service);
       }
       
@@ -210,59 +219,59 @@ class SeamPlatform {
     const interval = (this.config.polling?.interval || 60) * 1000; // Convert to milliseconds
     
     this.log.info(`Starting state polling every ${interval / 1000} seconds`);
-    this.log.info(`Accessories count: ${this.accessories.length}`);
-    this.log.info(`Polling configuration:`, this.config.polling);
+    this.debugLog(`Accessories count: ${this.accessories.length}`);
+    this.debugLog(`Polling configuration:`, this.config.polling);
 
     // Clear existing interval if any
     if (this.pollingInterval) {
-      this.log.info(`Clearing existing polling interval: ${this.pollingInterval}`);
+      this.debugLog(`Clearing existing polling interval: ${this.pollingInterval}`);
       clearInterval(this.pollingInterval);
     }
 
     // Poll immediately
-    this.log.info('Performing initial poll...');
+    this.debugLog('Performing initial poll...');
     this.pollDevices();
 
     // Setup interval
     this.pollingInterval = setInterval(() => {
-      this.log.info('Polling interval triggered');
+      this.debugLog('Polling interval triggered');
       this.pollDevices();
     }, interval);
     
     this.log.info(`Polling interval set with ID: ${this.pollingInterval}`);
-    this.log.info(`Next poll will occur in ${interval / 1000} seconds`);
+    this.debugLog(`Next poll will occur in ${interval / 1000} seconds`);
   }
 
   /**
    * Poll all devices for state updates
    */
   async pollDevices() {
-    this.log.info(`=== POLLING START ===`);
-    this.log.info(`Polling devices for state updates... Found ${this.accessories.length} accessories`);
+    this.debugLog(`=== POLLING START ===`);
+    this.debugLog(`Polling devices for state updates... Found ${this.accessories.length} accessories`);
 
     if (this.accessories.length === 0) {
       this.log.warn('No accessories found for polling - this might indicate a configuration issue');
-      this.log.info(`Accessories array:`, this.accessories);
-      this.log.info(`Platform accessories map size:`, this.platformAccessories.size);
+      this.debugLog(`Accessories array:`, this.accessories);
+      this.debugLog(`Platform accessories map size:`, this.platformAccessories.size);
       return;
     }
 
-    this.log.info(`Starting to poll ${this.accessories.length} accessories...`);
+    this.debugLog(`Starting to poll ${this.accessories.length} accessories...`);
 
     for (let i = 0; i < this.accessories.length; i++) {
       const accessory = this.accessories[i];
       try {
-        this.log.info(`[${i + 1}/${this.accessories.length}] Polling device: ${accessory.name} (${accessory.deviceId})`);
+        this.debugLog(`[${i + 1}/${this.accessories.length}] Polling device: ${accessory.name} (${accessory.deviceId})`);
         const startTime = Date.now();
         
         const status = await this.seamAPI.getLockStatus(accessory.deviceId);
         const pollTime = Date.now() - startTime;
         
-        this.log.info(`[${i + 1}/${this.accessories.length}] API call completed in ${pollTime}ms for ${accessory.name}`);
+        this.debugLog(`[${i + 1}/${this.accessories.length}] API call completed in ${pollTime}ms for ${accessory.name}`);
         
         // Only update if we got valid data
         if (status && typeof status === 'object') {
-          this.log.info(`[${i + 1}/${this.accessories.length}] Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
+          this.debugLog(`[${i + 1}/${this.accessories.length}] Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
           
           // Check if lock state changed before updating
           const currentLocked = accessory.isLocked;
@@ -271,22 +280,22 @@ class SeamPlatform {
           if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
             this.log.info(`[${i + 1}/${this.accessories.length}] Polling detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
           } else {
-            this.log.info(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
+            this.debugLog(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
           }
           
           accessory.updateState(status);
-          this.log.info(`[${i + 1}/${this.accessories.length}] State update completed for ${accessory.name}`);
+          this.debugLog(`[${i + 1}/${this.accessories.length}] State update completed for ${accessory.name}`);
         } else {
           this.log.warn(`[${i + 1}/${this.accessories.length}] Invalid status received for ${accessory.name}:`, status);
         }
       } catch (error) {
         this.log.error(`[${i + 1}/${this.accessories.length}] Failed to poll device ${accessory.name}:`, error.message);
-        this.log.info(`[${i + 1}/${this.accessories.length}] Error details:`, error);
+        this.debugLog(`[${i + 1}/${this.accessories.length}] Error details:`, error);
         // Don't update state on error to avoid "no response"
       }
     }
     
-    this.log.info(`=== POLLING COMPLETE ===`);
+    this.debugLog(`=== POLLING COMPLETE ===`);
   }
 
   /**
@@ -296,7 +305,7 @@ class SeamPlatform {
     if (this.config.webhooks) {
       this.config.webhooks.path = path;
       this.config.webhooks.secret = secret;
-      this.log.debug('Webhook configuration saved');
+      this.debugLog('Webhook configuration saved');
     }
   }
 
