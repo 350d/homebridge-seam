@@ -94,13 +94,13 @@ class SeamPlatform {
       // Start polling for state updates
       this.startPolling();
 
-      // Start webhook server if enabled
+      this.log.info(`Configured ${this.accessories.length} device(s)`);
+
+      // Start webhook server if enabled (after devices are configured)
       if (this.config.webhooks && this.config.webhooks.enabled) {
         this.webhookServer = new WebhookServer(this, this.config.webhooks);
         await this.webhookServer.start();
       }
-
-      this.log.info(`Configured ${this.accessories.length} device(s)`);
     } catch (error) {
       this.log.error('Failed to discover devices:', error.message);
     }
