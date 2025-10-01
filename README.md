@@ -1,6 +1,6 @@
 # Homebridge Seam
 
-A Homebridge plugin for smart locks via Seam.co API. Control your Yale, August, and other smart locks through HomeKit.
+A Homebridge plugin for smart locks via Seam.co API. Control your August, Yale, Schlage, Kwikset, and 100+ other smart lock brands through HomeKit using Seam's universal API.
 
 ## Features
 
@@ -114,14 +114,6 @@ Add the following to your Homebridge `config.json`:
 
 Webhooks provide real-time state updates without constant polling. The plugin automatically manages webhook creation and deletion.
 
-### Quick Setup with ngrok (Recommended for Testing)
-
-1. Install ngrok: `npm install -g ngrok`
-2. Start ngrok: `ngrok http 8080`
-3. Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
-4. Enable webhooks in plugin configuration and set the URL
-5. The plugin will automatically create the webhook with a secure random path
-
 ### Production Setup with HTTPS
 
 For production use, set up HTTPS webhooks using stunnel:
@@ -136,6 +128,7 @@ sudo apt install stunnel4 certbot
 
 ```bash
 # Open port 80 on your router and forward it to homebridge port 80
+# Stop Homebridge if needed (if your have it on port 80)
 sudo certbot certonly --standalone -d your-domain.com
 ```
 
@@ -212,13 +205,23 @@ Shows actual device data in HomeKit:
 
 This plugin supports any smart lock that works with Seam.co, including:
 
-- August Smart Lock (all generations)
-- Yale Assure Lock (all models)
-- Schlage Encode
-- Kwikset Halo
-- and many more!
+### Popular Brands
+- **August** - All generations (August Smart Lock Pro, August Smart Lock 4th Gen, etc.)
+- **Yale** - All Assure Lock models (Yale Assure Lock SL, Yale Assure Lock 2, etc.)
+- **Schlage** - Encode series (Schlage Encode, Schlage Encode Plus, etc.)
+- **Kwikset** - Halo series (Kwikset Halo, Kwikset Halo Touch, etc.)
 
-For the full list, visit [Seam Supported Devices](https://docs.seam.co/latest/)
+### Additional Brands
+- **Lockly** - Secure Plus, Vision Elite, and other models
+- **Nuki** - Smart Lock 3.0, Smart Lock 2.0, and accessories
+- **Salto** - Various electronic lock models
+- **Minut** - Smart lock solutions
+- **Tedee** - Smart lock systems
+- **And 100+ more brands!**
+
+For the complete list of supported devices, visit [Seam Supported Devices](https://docs.seam.co/latest/)
+
+**Note:** This plugin works with any device that's compatible with Seam.co's universal API, regardless of the manufacturer.
 
 ## HomeKit Features
 

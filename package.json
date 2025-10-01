@@ -2,7 +2,7 @@
   "name": "@350d/homebridge-seam",
   "displayName": "Homebridge Seam",
   "version": "2.10.20",
-  "description": "Homebridge plugin for smart locks via Seam.co API",
+  "description": "Homebridge plugin for smart locks via Seam.co API. Supports August, Yale, Schlage, Kwikset, and 100+ other smart lock brands through Seam's universal API",
   "main": "index.js",
   "keywords": [
     "homebridge-plugin",
@@ -12,7 +12,15 @@
     "smart-lock",
     "yale",
     "august",
-    "lock"
+    "schlage",
+    "kwikset",
+    "lock",
+    "door-lock",
+    "smart-door",
+    "home-automation",
+    "iot",
+    "seam-co",
+    "universal-api"
   ],
   "engines": {
     "node": ">=14.18.1",
