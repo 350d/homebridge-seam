@@ -233,6 +233,13 @@ class WebhookServer {
         this.platform.log.warn(`Device ${deviceId} has low battery`);
         break;
       
+      case 'device.battery_status_changed':
+        if (payload.battery_level) {
+          accessory.updateState({ battery_level: payload.battery_level });
+          this.platform.log.info(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
+        }
+        break;
+      
       default:
         this.platform.log.debug(`Unhandled webhook event type: ${eventType}`);
     }
