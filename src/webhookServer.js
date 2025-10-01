@@ -271,7 +271,8 @@ class WebhookServer {
         'device.disconnected', 
         'lock.locked',
         'lock.unlocked',
-        'device.low_battery'
+        'device.low_battery',
+        'device.battery_status_changed'
       ]);
       
       this.webhookId = webhook.webhook_id;
