@@ -242,9 +242,6 @@ class LockAccessory {
       .setCharacteristic(this.Characteristic.SerialNumber, this.deviceInfo.serialNumber)
       .setCharacteristic(this.Characteristic.FirmwareRevision, this.deviceInfo.firmwareVersion);
     
-    // Get real device info and update characteristics
-    await this.updateDeviceInfo();
-
     // Lock Mechanism Service
     this.lockService = new this.Service.LockMechanism(this.name);
     
@@ -283,6 +280,9 @@ class LockAccessory {
     }
 
     this.platform.log.debug(`Lock accessory setup completed: ${this.name}`);
+    
+    // Get real device info and update characteristics after all services are created
+    await this.updateDeviceInfo();
   }
 
   /**
@@ -599,21 +599,42 @@ class LockAccessory {
       
       this.informationService
         .getCharacteristic(this.Characteristic.Manufacturer)
-        .updateValue(this.deviceInfo.manufacturer);
+        .setValue(this.deviceInfo.manufacturer);
       
       this.informationService
         .getCharacteristic(this.Characteristic.Model)
-        .updateValue(this.deviceInfo.model);
+        .setValue(this.deviceInfo.model);
       
       this.informationService
         .getCharacteristic(this.Characteristic.SerialNumber)
-        .updateValue(this.deviceInfo.serialNumber);
+        .setValue(this.deviceInfo.serialNumber);
       
       this.informationService
         .getCharacteristic(this.Characteristic.FirmwareRevision)
-        .updateValue(this.deviceInfo.firmwareVersion);
+        .setValue(this.deviceInfo.firmwareVersion);
       
       this.platform.log.debug(`HomeKit characteristics updated: ${this.deviceInfo.manufacturer} ${this.deviceInfo.model} (${this.deviceInfo.serialNumber})`);
+      
+      // Force HomeKit to refresh by triggering a small delay and re-updating
+      setTimeout(() => {
+        this.informationService
+          .getCharacteristic(this.Characteristic.Manufacturer)
+          .setValue(this.deviceInfo.manufacturer);
+        
+        this.informationService
+          .getCharacteristic(this.Characteristic.Model)
+          .setValue(this.deviceInfo.model);
+        
+        this.informationService
+          .getCharacteristic(this.Characteristic.SerialNumber)
+          .setValue(this.deviceInfo.serialNumber);
+        
+        this.informationService
+          .getCharacteristic(this.Characteristic.FirmwareRevision)
+          .setValue(this.deviceInfo.firmwareVersion);
+        
+        this.platform.log.debug(`HomeKit characteristics force-updated: ${this.deviceInfo.manufacturer} ${this.deviceInfo.model} (${this.deviceInfo.serialNumber})`);
+      }, 1000);
     } catch (error) {
       this.platform.log.error(`Failed to update HomeKit characteristics:`, error.message);
     }
