@@ -1,7 +1,7 @@
 {
   "name": "@350d/homebridge-seam",
   "displayName": "Homebridge Seam",
-  "version": "2.10.9",
+  "version": "2.10.10",
   "description": "Homebridge plugin for smart locks via Seam.co API",
   "main": "index.js",
   "keywords": [
