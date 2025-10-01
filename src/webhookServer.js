@@ -176,6 +176,7 @@ class WebhookServer {
                 }
 
         const payload = JSON.parse(body);
+        this.platform.log.info(`[WEBHOOK] Received webhook: ${payload.event_type || 'unknown'} for device ${payload.device_id || 'unknown'}`);
         this.debugLog('Webhook received:', payload);
 
         // Process webhook

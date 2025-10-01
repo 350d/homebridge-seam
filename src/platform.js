@@ -278,7 +278,7 @@ class SeamPlatform {
           const newLocked = status.locked;
           
           if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
-            this.log.info(`[${i + 1}/${this.accessories.length}] Polling detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+            this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
           } else {
             this.debugLog(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
           }
