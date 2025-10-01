@@ -240,6 +240,24 @@ class WebhookServer {
         }
         break;
       
+      case 'device.door_opened':
+        accessory.updateState({ door_open: true });
+        this.platform.log.info(`Device ${deviceId} door opened`);
+        break;
+      
+      case 'device.door_closed':
+        accessory.updateState({ door_open: false });
+        this.platform.log.info(`Device ${deviceId} door closed`);
+        break;
+      
+      case 'device.tampered':
+        this.platform.log.warn(`Device ${deviceId} tampering detected!`);
+        break;
+      
+      case 'lock.access_denied':
+        this.platform.log.warn(`Device ${deviceId} access denied`);
+        break;
+      
       default:
         this.platform.log.debug(`Unhandled webhook event type: ${eventType}`);
     }
@@ -272,7 +290,11 @@ class WebhookServer {
         'lock.locked',
         'lock.unlocked',
         'device.low_battery',
-        'device.battery_status_changed'
+        'device.battery_status_changed',
+        'device.door_opened',
+        'device.door_closed',
+        'device.tampered',
+        'lock.access_denied'
       ]);
       
       this.webhookId = webhook.webhook_id;

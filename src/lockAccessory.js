@@ -19,6 +19,7 @@ class LockAccessory {
     this.isLocked = true;
     this.batteryLevel = 100;
     this.isLowBattery = false;
+    this.isDoorOpen = false;
     
     // Command state
     this.isCommandInProgress = false;
@@ -245,6 +246,13 @@ class LockAccessory {
       .getCharacteristic(this.Characteristic.StatusLowBattery)
       .onGet(this.getStatusLowBattery.bind(this));
 
+    // Contact Sensor Service (for door state)
+    this.contactService = new this.Service.ContactSensor(this.name, 'door');
+    
+    this.contactService
+      .getCharacteristic(this.Characteristic.ContactSensorState)
+      .onGet(this.getContactSensorState.bind(this));
+
     this.platform.log.info(`Lock accessory setup completed: ${this.name}`);
   }
 
@@ -255,7 +263,8 @@ class LockAccessory {
     return [
       this.informationService,
       this.lockService,
-      this.batteryService
+      this.batteryService,
+      this.contactService
     ];
   }
 
@@ -457,6 +466,18 @@ class LockAccessory {
   }
 
   /**
+   * Get contact sensor state (door open/closed)
+   */
+  async getContactSensorState() {
+    this.debugLog(`HomeKit requested contact sensor state for ${this.name}`);
+    const state = this.isDoorOpen 
+      ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED 
+      : this.Characteristic.ContactSensorState.CONTACT_DETECTED;
+    this.debugLog(`Contact sensor state for ${this.name}: ${this.isDoorOpen ? 'DOOR OPEN' : 'DOOR CLOSED'} (state value: ${state})`);
+    return state;
+  }
+
+  /**
    * Update state from external source (webhook or polling)
    */
   updateState(state) {
@@ -506,6 +527,21 @@ class LockAccessory {
           : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
       
       this.platform.log.debug(`${this.name} battery updated: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
+    }
+
+    // Update door state
+    if (typeof state.door_open === 'boolean' && state.door_open !== this.isDoorOpen) {
+      this.isDoorOpen = state.door_open;
+      
+      const contactState = this.isDoorOpen 
+        ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED 
+        : this.Characteristic.ContactSensorState.CONTACT_DETECTED;
+      
+      this.contactService
+        .getCharacteristic(this.Characteristic.ContactSensorState)
+        .updateValue(contactState);
+      
+      this.platform.log.debug(`${this.name} door state updated: ${this.isDoorOpen ? 'OPEN' : 'CLOSED'}`);
     }
   }
 
