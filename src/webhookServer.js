@@ -241,13 +241,21 @@ class WebhookServer {
         break;
       
       case 'device.door_opened':
-        accessory.updateState({ door_open: true });
-        this.platform.log.info(`Device ${deviceId} door opened`);
+        if (accessory.supportsDoorSensor) {
+          accessory.updateState({ door_open: true });
+          this.platform.log.info(`Device ${deviceId} door opened`);
+        } else {
+          this.platform.log.debug(`Device ${deviceId} door opened event ignored (door sensor not supported)`);
+        }
         break;
       
       case 'device.door_closed':
-        accessory.updateState({ door_open: false });
-        this.platform.log.info(`Device ${deviceId} door closed`);
+        if (accessory.supportsDoorSensor) {
+          accessory.updateState({ door_open: false });
+          this.platform.log.info(`Device ${deviceId} door closed`);
+        } else {
+          this.platform.log.debug(`Device ${deviceId} door closed event ignored (door sensor not supported)`);
+        }
         break;
       
       case 'device.tampered':

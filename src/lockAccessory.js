@@ -20,6 +20,7 @@ class LockAccessory {
     this.batteryLevel = 100;
     this.isLowBattery = false;
     this.isDoorOpen = false;
+    this.supportsDoorSensor = false;
     
     // Command state
     this.isCommandInProgress = false;
@@ -116,6 +117,24 @@ class LockAccessory {
   }
 
   /**
+   * Check if device supports door sensor
+   */
+  checkDoorSensorSupport(deviceData) {
+    // Check capabilities for door sensor support
+    const capabilities = deviceData.capabilities || [];
+    const supportsDoorSensor = capabilities.includes('door_sensor') || 
+                               capabilities.includes('contact_sensor') ||
+                               capabilities.includes('door_state');
+    
+    if (supportsDoorSensor !== this.supportsDoorSensor) {
+      this.supportsDoorSensor = supportsDoorSensor;
+      this.platform.log.info(`${this.name} door sensor support: ${supportsDoorSensor ? 'YES' : 'NO'}`);
+    }
+    
+    this.debugLog(`Device capabilities:`, capabilities);
+  }
+
+  /**
    * Update device info cache
    */
   updateDeviceInfoCache(deviceData) {
@@ -191,6 +210,9 @@ class LockAccessory {
       this.platform.log.info(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
       this.debugLog('Full extracted device info:', JSON.stringify(info, null, 2));
       
+      // Check if device supports door sensor
+      this.checkDoorSensorSupport(deviceData);
+      
       this.updateDeviceInfoCache(info);
       
       // Update name if it changed
@@ -246,12 +268,19 @@ class LockAccessory {
       .getCharacteristic(this.Characteristic.StatusLowBattery)
       .onGet(this.getStatusLowBattery.bind(this));
 
-    // Contact Sensor Service (for door state)
-    this.contactService = new this.Service.ContactSensor(this.name, 'door');
-    
-    this.contactService
-      .getCharacteristic(this.Characteristic.ContactSensorState)
-      .onGet(this.getContactSensorState.bind(this));
+    // Contact Sensor Service (for door state) - only if device supports it
+    if (this.supportsDoorSensor) {
+      this.contactService = new this.Service.ContactSensor(this.name, 'door');
+      
+      this.contactService
+        .getCharacteristic(this.Characteristic.ContactSensorState)
+        .onGet(this.getContactSensorState.bind(this));
+      
+      this.platform.log.info(`${this.name} door sensor enabled`);
+    } else {
+      this.contactService = null;
+      this.platform.log.info(`${this.name} door sensor not supported by device`);
+    }
 
     this.platform.log.info(`Lock accessory setup completed: ${this.name}`);
   }
@@ -260,12 +289,18 @@ class LockAccessory {
    * Get all services
    */
   getServices() {
-    return [
+    const services = [
       this.informationService,
       this.lockService,
-      this.batteryService,
-      this.contactService
+      this.batteryService
     ];
+    
+    // Add contact sensor only if device supports it
+    if (this.contactService) {
+      services.push(this.contactService);
+    }
+    
+    return services;
   }
 
   /**
@@ -529,8 +564,8 @@ class LockAccessory {
       this.platform.log.debug(`${this.name} battery updated: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
     }
 
-    // Update door state
-    if (typeof state.door_open === 'boolean' && state.door_open !== this.isDoorOpen) {
+    // Update door state (only if device supports door sensor)
+    if (this.contactService && typeof state.door_open === 'boolean' && state.door_open !== this.isDoorOpen) {
       this.isDoorOpen = state.door_open;
       
       const contactState = this.isDoorOpen 
