@@ -96,6 +96,9 @@ class SeamPlatform {
 
       this.log.info(`Configured ${this.accessories.length} device(s)`);
 
+      // Update cached accessories with fresh device info
+      await this.updateCachedAccessories();
+
       // Start webhook server if enabled (after devices are configured)
       if (this.config.webhooks && this.config.webhooks.enabled) {
         this.webhookServer = new WebhookServer(this, this.config.webhooks);
@@ -244,6 +247,45 @@ class SeamPlatform {
       } catch (error) {
         this.log.error(`Failed to poll device ${accessory.name}:`, error.message);
         // Don't update state on error to avoid "no response"
+      }
+    }
+  }
+
+  /**
+   * Update cached accessories with fresh device info
+   */
+  async updateCachedAccessories() {
+    for (const [uuid, platformAccessory] of this.platformAccessories) {
+      // Skip if this accessory is already configured
+      if (this.accessories.some(acc => acc.deviceId === platformAccessory.context.deviceId)) {
+        continue;
+      }
+
+      try {
+        this.log.info(`Updating device info for cached accessory: ${platformAccessory.displayName}`);
+        
+        // Get fresh device data from API
+        const device = await this.seamAPI.getDevice(platformAccessory.context.deviceId);
+        if (!device) {
+          this.log.warn(`Device ${platformAccessory.context.deviceId} not found, skipping cached accessory update`);
+          continue;
+        }
+
+        // Create temporary accessory to extract device info
+        const tempAccessory = new LockAccessory(this, device, {
+          deviceId: platformAccessory.context.deviceId,
+          name: platformAccessory.displayName
+        });
+        
+        // Load device info
+        await tempAccessory.updateDeviceInfo();
+        
+        // Update HomeKit characteristics
+        tempAccessory.updateHomeKitCharacteristics();
+        
+        this.log.info(`Updated device info for cached accessory: ${platformAccessory.displayName}`);
+      } catch (error) {
+        this.log.error(`Failed to update cached accessory ${platformAccessory.displayName}:`, error.message);
       }
     }
   }
