@@ -318,7 +318,13 @@ class LockAccessory {
       const statusPromise = this.platform.seamAPI.getLockStatus(this.deviceId);
       const status = await Promise.race([statusPromise, timeoutPromise]);
       
+      const oldLocked = this.isLocked;
       this.isLocked = status.locked;
+      
+      // Log state change if it occurred
+      if (oldLocked !== this.isLocked) {
+        this.platform.log.info(`${this.name} lock state changed via API: ${oldLocked ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      }
       
       // Update battery level if available (always update when we have fresh data)
       if (typeof status.battery_level === 'number') {
@@ -428,6 +434,8 @@ class LockAccessory {
    * Execute lock command with timeout
    */
   async executeLockCommand(shouldLock) {
+    this.platform.log.info(`Executing ${shouldLock ? 'lock' : 'unlock'} command for ${this.name}...`);
+    
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Command timeout')), 15000);
@@ -438,15 +446,22 @@ class LockAccessory {
         ? this.platform.seamAPI.lockDoor(this.deviceId)
         : this.platform.seamAPI.unlockDoor(this.deviceId);
       
+      this.debugLog(`Sending ${shouldLock ? 'lock' : 'unlock'} request to Seam API for ${this.name}`);
       await Promise.race([commandPromise, timeoutPromise]);
+      this.debugLog(`Seam API ${shouldLock ? 'lock' : 'unlock'} command completed for ${this.name}`);
 
       // Update state
+      const oldState = this.isLocked;
       this.isLocked = shouldLock;
+      
+      this.platform.log.info(`${this.name} lock state changed: ${oldState ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
       
       // Update characteristics immediately
       const lockState = shouldLock 
         ? this.Characteristic.LockCurrentState.SECURED 
         : this.Characteristic.LockCurrentState.UNSECURED;
+      
+      this.debugLog(`${this.name} updating HomeKit characteristics with new lock state: ${lockState}`);
       
       this.lockService
         .getCharacteristic(this.Characteristic.LockCurrentState)
@@ -456,9 +471,11 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(lockState);
       
-      this.platform.log.debug(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
+      this.platform.log.info(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
+      this.debugLog(`${this.name} HomeKit characteristics updated successfully`);
       
       // Add small delay to allow API to update before polling can interfere
+      this.debugLog(`${this.name} waiting 2 seconds before allowing polling to resume`);
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
       this.platform.log.error(`Failed to ${shouldLock ? 'lock' : 'unlock'} ${this.name}:`, error.message);
@@ -526,11 +543,15 @@ class LockAccessory {
     
     // Update lock state
     if (typeof state.locked === 'boolean' && state.locked !== this.isLocked) {
+      const oldState = this.isLocked;
       this.isLocked = state.locked;
       
       const lockState = this.isLocked 
         ? this.Characteristic.LockCurrentState.SECURED 
         : this.Characteristic.LockCurrentState.UNSECURED;
+      
+      this.platform.log.info(`${this.name} lock state changed: ${oldState ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      this.debugLog(`${this.name} updating HomeKit characteristics with new lock state: ${lockState}`);
       
       this.lockService
         .getCharacteristic(this.Characteristic.LockCurrentState)
@@ -540,7 +561,9 @@ class LockAccessory {
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(lockState);
       
-      this.platform.log.debug(`${this.name} state updated: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      this.platform.log.debug(`${this.name} HomeKit characteristics updated successfully`);
+    } else if (typeof state.locked === 'boolean') {
+      this.debugLog(`${this.name} lock state unchanged: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
     }
 
     // Update battery level

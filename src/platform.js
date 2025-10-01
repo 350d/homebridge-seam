@@ -236,8 +236,18 @@ class SeamPlatform {
         
         // Only update if we got valid data
         if (status && typeof status === 'object') {
+          this.log.debug(`Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
+          
+          // Check if lock state changed before updating
+          const currentLocked = accessory.isLocked;
+          const newLocked = status.locked;
+          
+          if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
+            this.log.info(`Polling detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+          }
+          
           accessory.updateState(status);
-          this.log.debug(`Updated state for ${accessory.name}:`, status);
+          this.log.debug(`State update completed for ${accessory.name}`);
         } else {
           this.log.warn(`Invalid status received for ${accessory.name}:`, status);
         }

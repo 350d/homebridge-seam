@@ -209,10 +209,12 @@ class WebhookServer {
     // Update accessory state based on event type
     switch (eventType) {
       case 'lock.locked':
+        this.platform.log.info(`Webhook: ${deviceId} lock.locked event received`);
         accessory.updateState({ locked: true });
         break;
       
       case 'lock.unlocked':
+        this.platform.log.info(`Webhook: ${deviceId} lock.unlocked event received`);
         accessory.updateState({ locked: false });
         break;
       
