@@ -6,31 +6,29 @@
   "footerDisplay": "For help and support visit the [GitHub repository](https://github.com/350d/homebridge-seam)",
   "schema": {
     "type": "object",
+    "required": ["name", "apiKey", "devices"],
     "properties": {
       "name": {
         "title": "Platform Name",
         "type": "string",
-        "default": "Seam Lock",
-        "required": true
+        "default": "Seam Lock"
       },
       "apiKey": {
         "title": "Seam API Key",
         "type": "string",
-        "required": true,
         "placeholder": "seam_****",
         "description": "Your Seam.co API key. Get it from Seam Console."
       },
       "devices": {
         "title": "Devices",
         "type": "array",
-        "required": true,
         "items": {
           "type": "object",
+          "required": ["deviceId"],
           "properties": {
             "deviceId": {
               "title": "Device ID",
               "type": "string",
-              "required": true,
               "placeholder": "device_****",
               "description": "Device ID from Seam.co"
             },
