@@ -348,12 +348,17 @@ class WebhookServer {
       // Find and delete webhooks that match our base URL
       for (const webhook of existingWebhooks) {
         if (webhook.url && this.config.url && webhook.url.startsWith(this.config.url)) {
-          await this.platform.seamAPI.deleteWebhook(webhook.webhook_id);
-          this.platform.log.debug(`Deleted existing webhook: ${webhook.webhook_id}`);
+          try {
+            await this.platform.seamAPI.deleteWebhook(webhook.webhook_id);
+            this.platform.log.debug(`Deleted existing webhook: ${webhook.webhook_id}`);
+          } catch (deleteError) {
+            this.platform.log.debug(`Failed to delete webhook ${webhook.webhook_id}:`, deleteError.message);
+          }
         }
       }
     } catch (error) {
-      this.platform.log.debug('Failed to cleanup webhooks:', error.message);
+      // Don't log as error during cleanup - API might be unavailable
+      this.platform.log.debug('Webhook cleanup skipped (API unavailable):', error.message);
     }
   }
 

@@ -39,6 +39,12 @@ class SeamAPI {
 
         res.on('end', () => {
           try {
+            // Check if response is empty or not JSON
+            if (!body || body.trim() === '') {
+              reject(new Error(`Empty response from API (status: ${res.statusCode})`));
+              return;
+            }
+            
             const response = JSON.parse(body);
             
             if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -47,7 +53,12 @@ class SeamAPI {
               reject(new Error(`API Error ${res.statusCode}: ${response.error?.message || body}`));
             }
           } catch (e) {
-            reject(new Error(`Failed to parse response: ${e.message}`));
+            // If JSON parsing fails, check if it's an error message
+            if (body.includes('error code:')) {
+              reject(new Error(`API Error: ${body}`));
+            } else {
+              reject(new Error(`Failed to parse response: ${e.message} - Response: ${body.substring(0, 100)}...`));
+            }
           }
         });
       });
