@@ -292,7 +292,7 @@ class WebhookServer {
       await this.cleanupWebhook();
 
       // Create new webhook with the provided URL
-      const webhook = await this.platform.seamAPI.createWebhook(this.webhookUrl, [
+      const eventTypes = [
         'device.connected',
         'device.disconnected', 
         'lock.locked',
@@ -300,10 +300,32 @@ class WebhookServer {
         'device.low_battery',
         'device.battery_status_changed',
         'device.door_opened',
-        'device.door_closed',
-        'device.tampered',
-        'lock.access_denied'
-      ]);
+        'device.door_closed'
+      ];
+      
+      this.platform.log.debug(`Registering webhook with events: ${eventTypes.join(', ')}`);
+      
+      let webhook;
+      try {
+        webhook = await this.platform.seamAPI.createWebhook(this.webhookUrl, eventTypes);
+      } catch (error) {
+        if (error.message.includes('Invalid event types')) {
+          this.platform.log.warn('Some events not supported, trying with basic events only...');
+          // Try with basic events only
+          const basicEventTypes = [
+            'device.connected',
+            'device.disconnected', 
+            'lock.locked',
+            'lock.unlocked',
+            'device.low_battery',
+            'device.battery_status_changed'
+          ];
+          this.platform.log.debug(`Registering webhook with basic events: ${basicEventTypes.join(', ')}`);
+          webhook = await this.platform.seamAPI.createWebhook(this.webhookUrl, basicEventTypes);
+        } else {
+          throw error;
+        }
+      }
       
       this.webhookId = webhook.webhook_id;
       this.platform.log.info(`Webhook registered with Seam: ${this.webhookId}`);
