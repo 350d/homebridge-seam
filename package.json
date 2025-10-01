@@ -1,5 +1,5 @@
 {
-  "name": "@350d/homebridge-seam",
+  "name": "@homebridge-plugins/homebridge-seam",
   "displayName": "Homebridge Seam",
   "version": "2.10.21",
   "description": "Homebridge plugin for smart locks via Seam.co API. Supports August, Yale, Schlage, Kwikset, and 100+ other smart lock brands through Seam's universal API",
@@ -27,7 +27,7 @@
     "homebridge": ">=1.3.5"
   },
   "homebridge": {
-    "pluginName": "@350d/homebridge-seam",
+    "pluginName": "@homebridge-plugins/homebridge-seam",
     "platforms": [
       "SeamLock"
     ]
@@ -36,11 +36,16 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/350d/homebridge-seam.git"
+    "url": "git+https://github.com/homebridge/plugins.git",
+    "directory": "packages/homebridge-seam"
   },
   "bugs": {
-    "url": "https://github.com/350d/homebridge-seam/issues"
+    "url": "https://github.com/homebridge/plugins/issues"
   },
-  "homepage": "https://github.com/350d/homebridge-seam#readme",
-  "dependencies": {}
+  "homepage": "https://github.com/homebridge/plugins#readme",
+  "dependencies": {},
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/homebridge"
+  }
 }
