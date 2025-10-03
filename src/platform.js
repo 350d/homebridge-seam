@@ -283,7 +283,8 @@ class SeamPlatform {
             this.debugLog(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
           }
           
-          accessory.updateState(status);
+          // Use updateStateWithPriority for polling with current timestamp
+          accessory.updateStateWithPriority(status, 'polling', Date.now());
           this.debugLog(`[${i + 1}/${this.accessories.length}] State update completed for ${accessory.name}`);
         } else {
           this.log.warn(`[${i + 1}/${this.accessories.length}] Invalid status received for ${accessory.name}:`, status);

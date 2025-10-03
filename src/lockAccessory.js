@@ -26,6 +26,12 @@ class LockAccessory {
     this.isCommandInProgress = false;
     this.commandPromise = null;
     
+    // Event tracking for race condition handling
+    this.lastEventTime = 0;
+    this.lastCommandTime = 0;
+    this.lastWebhookTime = 0;
+    this.lastPollingTime = 0;
+    
     // Battery cache
     this.batteryCache = {
       level: 100,
@@ -431,10 +437,54 @@ class LockAccessory {
   }
 
   /**
-   * Execute lock command with timeout
+   * Update state with priority handling based on timestamps
+   */
+  updateStateWithPriority(state, source, timestamp) {
+    this.debugLog(`Updating state for ${this.name} from ${source} at ${new Date(timestamp).toISOString()}`);
+    
+    // Check if this update is newer than the last update from the same source
+    if (source === 'webhook' && this.lastWebhookTime && timestamp <= this.lastWebhookTime) {
+      this.debugLog(`Webhook update is older than last webhook (${new Date(this.lastWebhookTime).toISOString()}), skipping for ${this.name}`);
+      return;
+    }
+    
+    if (source === 'polling' && this.lastPollingTime && timestamp <= this.lastPollingTime) {
+      this.debugLog(`Polling update is older than last polling (${new Date(this.lastPollingTime).toISOString()}), skipping for ${this.name}`);
+      return;
+    }
+    
+    // If command is in progress, check if this update is newer
+    if (this.isCommandInProgress) {
+      if (timestamp > this.lastCommandTime) {
+        this.debugLog(`Update from ${source} is newer than command in progress, applying update for ${this.name}`);
+        this.updateState(state);
+      } else {
+        this.debugLog(`Command in progress and update from ${source} is older, skipping for ${this.name}`);
+        return;
+      }
+    } else {
+      // No command in progress, apply update
+      this.updateState(state);
+    }
+    
+    // Update source timestamps
+    if (source === 'webhook') {
+      this.lastWebhookTime = timestamp;
+    } else if (source === 'polling') {
+      this.lastPollingTime = timestamp;
+    } else if (source === 'command') {
+      this.lastCommandTime = timestamp;
+    }
+  }
+
+  /**
+   * Execute lock command with improved race condition handling
    */
   async executeLockCommand(shouldLock) {
     this.platform.log.info(`Executing ${shouldLock ? 'lock' : 'unlock'} command for ${this.name}...`);
+    
+    const commandTime = Date.now();
+    this.lastCommandTime = commandTime;
     
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => {
@@ -450,7 +500,7 @@ class LockAccessory {
       await Promise.race([commandPromise, timeoutPromise]);
       this.debugLog(`Seam API ${shouldLock ? 'lock' : 'unlock'} command completed for ${this.name}`);
 
-      // Update state
+      // Update state with command priority
       const oldState = this.isLocked;
       this.isLocked = shouldLock;
       
@@ -474,9 +524,8 @@ class LockAccessory {
       this.platform.log.info(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
       this.debugLog(`${this.name} HomeKit characteristics updated successfully`);
       
-      // Add small delay to allow API to update before polling can interfere
-      this.debugLog(`${this.name} waiting 2 seconds before allowing polling to resume`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // No delay - webhooks will handle real-time updates based on timestamps
+      this.debugLog(`${this.name} command completed, webhooks will handle any additional updates`);
     } catch (error) {
       this.platform.log.error(`Failed to ${shouldLock ? 'lock' : 'unlock'} ${this.name}:`, error.message);
       // Throw HAP error to indicate failure to HomeKit
@@ -534,12 +583,6 @@ class LockAccessory {
    */
   updateState(state) {
     this.debugLog(`Updating state for ${this.name}:`, state);
-    
-    // Skip state update if command is in progress to avoid race conditions
-    if (this.isCommandInProgress) {
-      this.debugLog(`Command in progress, skipping state update for ${this.name}`);
-      return;
-    }
     
     // Update lock state
     if (typeof state.locked === 'boolean' && state.locked !== this.isLocked) {

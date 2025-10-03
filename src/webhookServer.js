@@ -194,7 +194,7 @@ class WebhookServer {
   }
 
   /**
-   * Process webhook payload
+   * Process webhook payload with timestamp support
    */
   processWebhook(payload) {
     this.debugLog(`Processing webhook payload:`, JSON.stringify(payload, null, 2));
@@ -206,8 +206,12 @@ class WebhookServer {
 
     const eventType = payload.event_type;
     const deviceId = payload.device_id;
+    
+    // Extract timestamp from webhook - Seam provides occurred_at field
+    const eventTime = payload.occurred_at ? new Date(payload.occurred_at).getTime() : Date.now();
+    const eventTimeStr = payload.occurred_at || new Date(eventTime).toISOString();
 
-    this.debugLog(`Webhook event: ${eventType} for device ${deviceId}`);
+    this.debugLog(`Webhook event: ${eventType} for device ${deviceId} occurred at ${eventTimeStr}`);
 
     // Find accessory
     const accessory = this.platform.accessories.find(acc => acc.deviceId === deviceId);
@@ -216,45 +220,54 @@ class WebhookServer {
       return;
     }
 
+    // Check if this event is newer than the last processed event
+    if (accessory.lastEventTime && eventTime <= accessory.lastEventTime) {
+      this.debugLog(`Webhook event ${eventType} for ${deviceId} is older than last processed event (${new Date(accessory.lastEventTime).toISOString()}), skipping`);
+      return;
+    }
+
+    // Update last event time
+    accessory.lastEventTime = eventTime;
+
     // Update accessory state based on event type
     switch (eventType) {
       case 'lock.locked':
-        this.platform.log.info(`Webhook: ${deviceId} lock.locked event received`);
-        accessory.updateState({ locked: true });
+        this.platform.log.info(`Webhook: ${deviceId} lock.locked event received at ${eventTimeStr}`);
+        accessory.updateStateWithPriority({ locked: true }, 'webhook', eventTime);
         break;
       
       case 'lock.unlocked':
-        this.platform.log.info(`Webhook: ${deviceId} lock.unlocked event received`);
-        accessory.updateState({ locked: false });
+        this.platform.log.info(`Webhook: ${deviceId} lock.unlocked event received at ${eventTimeStr}`);
+        accessory.updateStateWithPriority({ locked: false }, 'webhook', eventTime);
         break;
       
       case 'device.connected':
-        accessory.updateState({ online: true });
+        accessory.updateStateWithPriority({ online: true }, 'webhook', eventTime);
         this.debugLog(`Device ${deviceId} connected`);
         break;
       
       case 'device.disconnected':
-        accessory.updateState({ online: false });
+        accessory.updateStateWithPriority({ online: false }, 'webhook', eventTime);
         this.platform.log.warn(`Device ${deviceId} disconnected`);
         break;
       
       case 'device.low_battery':
         if (payload.battery_level) {
-          accessory.updateState({ battery_level: payload.battery_level });
+          accessory.updateStateWithPriority({ battery_level: payload.battery_level }, 'webhook', eventTime);
         }
         this.platform.log.warn(`Device ${deviceId} has low battery`);
         break;
       
       case 'device.battery_status_changed':
         if (payload.battery_level) {
-          accessory.updateState({ battery_level: payload.battery_level });
+          accessory.updateStateWithPriority({ battery_level: payload.battery_level }, 'webhook', eventTime);
           this.debugLog(`Device ${deviceId} battery level updated: ${Math.round(payload.battery_level * 100)}%`);
         }
         break;
       
       case 'device.door_opened':
         if (accessory.supportsDoorSensor) {
-          accessory.updateState({ door_open: true });
+          accessory.updateStateWithPriority({ door_open: true }, 'webhook', eventTime);
           this.debugLog(`Device ${deviceId} door opened`);
         } else {
           this.debugLog(`Device ${deviceId} door opened event ignored (door sensor not supported)`);
@@ -263,7 +276,7 @@ class WebhookServer {
       
       case 'device.door_closed':
         if (accessory.supportsDoorSensor) {
-          accessory.updateState({ door_open: false });
+          accessory.updateStateWithPriority({ door_open: false }, 'webhook', eventTime);
           this.debugLog(`Device ${deviceId} door closed`);
         } else {
           this.debugLog(`Device ${deviceId} door closed event ignored (door sensor not supported)`);
