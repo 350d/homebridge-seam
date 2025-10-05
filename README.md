@@ -2,6 +2,8 @@
 
 A Homebridge plugin for smart locks via Seam.co API. Control your August, Yale, Schlage, Kwikset, and 100+ other smart lock brands through HomeKit using Seam's universal API.
 
+[![verified-by-homebridge](https://img.shields.io/badge/homebridge-verified-blueviolet?color=%23491F59&style=for-the-badge&logoColor=%23FFFFFF&logo=homebridge)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
+
 ## Features
 
 - 🔐 **Lock/Unlock Control** - Control your smart locks directly from HomeKit
