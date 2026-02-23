@@ -1,5 +1,15 @@
 'use strict';
 
+const DEVICE_TYPE_MAP = {
+  'schlage_lock': { manufacturer: 'Schlage', model: 'Encode' },
+  'august_lock':  { manufacturer: 'August',  model: 'Smart Lock' },
+  'yale_lock':    { manufacturer: 'Yale',     model: 'Smart Lock' },
+  'kwikset_lock': { manufacturer: 'Kwikset', model: 'Smart Lock' },
+  'lockly_lock':  { manufacturer: 'Lockly',  model: 'Smart Lock' },
+  'nuki_lock':    { manufacturer: 'Nuki',     model: 'Smart Lock' },
+  'tedee_lock':   { manufacturer: 'Tedee',    model: 'Smart Lock' },
+};
+
 /**
  * Lock Accessory for Homebridge
  * Simple lock implementation
@@ -27,7 +37,6 @@ class LockAccessory {
     this.commandPromise = null;
     
     // Event tracking for race condition handling
-    this.lastEventTime = 0;
     this.lastCommandTime = 0;
     this.lastWebhookTime = 0;
     this.lastPollingTime = 0;
@@ -159,15 +168,6 @@ class LockAccessory {
    * Falls back to mapped display names, then to whatever is already cached.
    */
   _extractDeviceInfo(deviceData) {
-    const DEVICE_TYPE_MAP = {
-      'schlage_lock': { manufacturer: 'Schlage', model: 'Encode' },
-      'august_lock':  { manufacturer: 'August',  model: 'Smart Lock' },
-      'yale_lock':    { manufacturer: 'Yale',     model: 'Smart Lock' },
-      'kwikset_lock': { manufacturer: 'Kwikset', model: 'Smart Lock' },
-      'lockly_lock':  { manufacturer: 'Lockly',  model: 'Smart Lock' },
-      'nuki_lock':    { manufacturer: 'Nuki',     model: 'Smart Lock' },
-      'tedee_lock':   { manufacturer: 'Tedee',    model: 'Smart Lock' },
-    };
     const mapped = DEVICE_TYPE_MAP[deviceData.device_type] || {};
 
     const rawMfr = deviceData.properties?.manufacturer;
@@ -187,25 +187,6 @@ class LockAccessory {
       serialNumber: deviceData.properties?.serial_number || deviceData.device_id || this.deviceInfo.serialNumber,
       firmwareVersion: deviceData.properties?.firmware_version || this.deviceInfo.firmwareVersion
     };
-  }
-
-  /**
-   * Get device info from cache or API
-   */
-  async getDeviceInfoFromAPI() {
-    if (this.isDeviceInfoCacheValid()) {
-      this.debugLog(`Using cached device info: ${this.deviceInfo.name}`);
-      return this.deviceInfo;
-    }
-    this.debugLog(`Device info cache expired, fetching from API...`);
-    try {
-      const deviceData = await this.platform.seamAPI.getDevice(this.deviceId);
-      this.updateDeviceInfoCache(this._extractDeviceInfo(deviceData));
-      return this.deviceInfo;
-    } catch (error) {
-      this.platform.log.error(`Failed to get device info from API:`, error.message);
-      return this.deviceInfo;
-    }
   }
 
   /**
@@ -626,54 +607,6 @@ class LockAccessory {
       
       this.debugLog(`${this.name} door state updated: ${this.isDoorOpen ? 'OPEN' : 'CLOSED'}`);
     }
-  }
-
-  /**
-   * Update HomeKit characteristics with current device info
-   */
-  updateHomeKitCharacteristics() {
-    if (!this.informationService) {
-      this.platform.log.warn(`Information service not available for ${this.name}`);
-      return;
-    }
-
-    try {
-      this.debugLog('Updating HomeKit characteristics:', {
-        manufacturer: this.deviceInfo.manufacturer,
-        model: this.deviceInfo.model,
-        serialNumber: this.deviceInfo.serialNumber,
-        firmware: this.deviceInfo.firmwareVersion
-      });
-      
-      this.informationService
-        .getCharacteristic(this.Characteristic.Manufacturer)
-        .updateValue(this.deviceInfo.manufacturer);
-      
-      this.informationService
-        .getCharacteristic(this.Characteristic.Model)
-        .updateValue(this.deviceInfo.model);
-      
-      this.informationService
-        .getCharacteristic(this.Characteristic.SerialNumber)
-        .updateValue(this.deviceInfo.serialNumber);
-      
-      this.informationService
-        .getCharacteristic(this.Characteristic.FirmwareRevision)
-        .updateValue(this.deviceInfo.firmwareVersion);
-      
-      this.debugLog(`HomeKit characteristics updated: ${this.deviceInfo.manufacturer} ${this.deviceInfo.model} (${this.deviceInfo.serialNumber})`);
-    } catch (error) {
-      this.platform.log.error(`Failed to update HomeKit characteristics:`, error.message);
-    }
-  }
-
-  /**
-   * Force refresh device info
-   */
-  async refreshDeviceInfo() {
-    this.debugLog(`Refreshing device info for ${this.name}...`);
-    await this.updateDeviceInfo();
-    this.updateHomeKitCharacteristics();
   }
 
   /**
