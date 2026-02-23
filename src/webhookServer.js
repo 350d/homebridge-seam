@@ -29,13 +29,6 @@ class WebhookServer {
   }
 
   /**
-   * Generate webhook secret
-   */
-  generateSecret() {
-    return crypto.randomBytes(32).toString('hex');
-  }
-
-  /**
    * Generate random webhook path
    */
   generatePath() {
@@ -43,31 +36,53 @@ class WebhookServer {
   }
 
   /**
-   * Verify webhook signature
+   * Verify Svix webhook signature.
+   * Seam uses Svix for webhook delivery. Svix signs payloads with HMAC-SHA256
+   * over "{svix-id}.{svix-timestamp}.{raw-body}" using the base64-decoded secret.
    */
-  verifySignature(payload, signature) {
-    if (!this.secret) {
-      this.platform.log.warn('Webhook secret not configured, skipping signature verification');
-      return true;
+  verifySignature(body, headers) {
+    const msgId = headers['svix-id'];
+    const msgTimestamp = headers['svix-timestamp'];
+    const msgSignature = headers['svix-signature'];
+
+    if (!msgId || !msgTimestamp || !msgSignature) {
+      return false;
     }
 
-    if (!signature) {
-      this.platform.log.error('Webhook signature missing');
+    if (!this.secret) {
+      this.platform.log.warn('Webhook secret not configured, cannot verify signature');
+      return false;
+    }
+
+    // Reject replays older than 5 minutes
+    const ts = parseInt(msgTimestamp, 10);
+    if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+      this.platform.log.warn('Webhook rejected: timestamp out of tolerance (possible replay)');
       return false;
     }
 
     try {
-      const expectedSignature = crypto
-        .createHmac('sha256', this.secret)
-        .update(payload, 'utf8')
-        .digest('hex');
-
-      const providedSignature = signature.replace('sha256=', '');
-      
-      const isValid = crypto.timingSafeEqual(
-        Buffer.from(expectedSignature, 'hex'),
-        Buffer.from(providedSignature, 'hex')
+      // Decode Svix secret — strip optional whsec_ prefix, then base64-decode
+      const secretBytes = Buffer.from(
+        this.secret.startsWith('whsec_') ? this.secret.slice(6) : this.secret,
+        'base64'
       );
+
+      const signedContent = `${msgId}.${msgTimestamp}.${body}`;
+      const computed = crypto.createHmac('sha256', secretBytes)
+        .update(signedContent, 'utf8')
+        .digest('base64');
+
+      // svix-signature may contain multiple space-delimited sigs; accept any v1 match
+      const sigs = msgSignature.split(' ');
+      const isValid = sigs.some(sig => {
+        if (!sig.startsWith('v1,')) return false;
+        const provided = sig.slice(3);
+        const a = Buffer.from(computed, 'base64');
+        const b = Buffer.from(provided, 'base64');
+        if (a.length !== b.length) return false;
+        return crypto.timingSafeEqual(a, b);
+      });
 
       if (!isValid) {
         this.platform.log.error('Invalid webhook signature');
@@ -103,11 +118,11 @@ class WebhookServer {
     }
 
     try {
-      // Always generate new path/secret when starting (for security)
+      // Always generate a new random path on startup (security: rotating URL)
+      // The secret is obtained from Seam's webhook creation response, not self-generated
       this.path = this.generatePath();
-      this.secret = this.generateSecret();
+      this.secret = null; // will be populated after registerWebhook()
       this.debugLog(`Generated new webhook path: ${this.path}`);
-      this.debugLog(`Generated new webhook secret: ${this.secret}`);
       
       // Construct full URL
       this.webhookUrl = this.config.url + this.path;
@@ -117,14 +132,12 @@ class WebhookServer {
         this.handleRequest(req, res);
       });
 
-      // Start listening
+      // Start listening — attach error listener before listen() to catch EADDRINUSE etc.
       await new Promise((resolve, reject) => {
-        this.server.listen(this.port, (err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
+        this.server.once('error', reject);
+        this.server.listen(this.port, () => {
+          this.server.off('error', reject);
+          resolve();
         });
       });
 
@@ -154,26 +167,34 @@ class WebhookServer {
     }
 
     let body = '';
+    const MAX_BODY_SIZE = 102_400; // 100 KB
+    let bodyLimitExceeded = false;
 
     req.on('data', (chunk) => {
+      if (bodyLimitExceeded) return;
+      if (body.length + chunk.length > MAX_BODY_SIZE) {
+        bodyLimitExceeded = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload Too Large' }));
+        req.destroy();
+        return;
+      }
       body += chunk.toString();
     });
 
     req.on('end', () => {
-            try {
-                // Log headers for debugging
-                this.debugLog('Webhook headers:', JSON.stringify(req.headers, null, 2));
-                
-                // Verify webhook signature (optional for now)
-                const signature = req.headers['x-seam-signature'] || req.headers['x-hub-signature-256'];
-                if (signature && !this.verifySignature(body, signature)) {
-                  this.platform.log.error('Webhook signature verification failed');
-                  res.writeHead(401, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: 'Unauthorized' }));
-                  return;
-                } else if (!signature) {
-                  this.debugLog('Webhook received without signature (signature verification disabled)');
-                }
+      if (bodyLimitExceeded) return;
+      try {
+        // Log headers for debugging
+        this.debugLog('Webhook headers:', JSON.stringify(req.headers, null, 2));
+
+        // Mandatory Svix signature verification
+        if (!this.verifySignature(body, req.headers)) {
+          this.platform.log.warn('Webhook rejected: invalid or missing Svix signature');
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unauthorized' }));
+          return;
+        }
 
         const payload = JSON.parse(body);
         this.platform.log.info(`[WEBHOOK] Received webhook: ${payload.event_type || 'unknown'} for device ${payload.device_id || 'unknown'}`);
@@ -219,15 +240,6 @@ class WebhookServer {
       this.platform.log.warn(`No accessory found for device ${deviceId}. Available accessories:`, this.platform.accessories.map(acc => acc.deviceId));
       return;
     }
-
-    // Check if this event is newer than the last processed event
-    if (accessory.lastEventTime && eventTime <= accessory.lastEventTime) {
-      this.debugLog(`Webhook event ${eventType} for ${deviceId} is older than last processed event (${new Date(accessory.lastEventTime).toISOString()}), skipping`);
-      return;
-    }
-
-    // Update last event time
-    accessory.lastEventTime = eventTime;
 
     // Update accessory state based on event type
     switch (eventType) {
@@ -329,34 +341,19 @@ class WebhookServer {
    */
   async registerWebhook() {
     try {
-      // Check if webhook already exists for this URL
-      const existingWebhooks = await this.platform.seamAPI.listWebhooks();
-      const existingWebhook = existingWebhooks.find(wh => wh.url === this.webhookUrl);
-      
-      if (existingWebhook) {
-        this.webhookId = existingWebhook.webhook_id;
-        this.debugLog(`Using existing webhook: ${this.webhookId}`);
-        this.debugLog(`Webhook URL: ${this.webhookUrl}`);
-        this.debugLog(`Webhook secret: ${this.secret.substring(0, 8)}...`);
-        return;
-      }
-
-      // Clean up any other webhooks first
+      // Clean up any old webhooks for this base URL first
       await this.cleanupWebhook();
 
-      // Determine supported events based on device capabilities
       const eventTypes = this.getSupportedWebhookEvents();
-      
       this.debugLog(`Registering webhook with events: ${eventTypes.join(', ')}`);
-      
+
       const webhook = await this.platform.seamAPI.createWebhook(this.webhookUrl, eventTypes);
-      
+
       this.webhookId = webhook.webhook_id;
+      this.secret = webhook.secret; // Svix-generated whsec_... secret
       this.platform.log.info(`Webhook registered with Seam: ${this.webhookId}`);
       this.debugLog(`Webhook URL: ${this.webhookUrl}`);
-      this.debugLog(`Webhook secret: ${this.secret}`);
-      
-      // Save the new configuration
+
       this.platform.saveWebhookConfig(this.path, this.secret);
     } catch (error) {
       this.platform.log.error('Failed to register webhook:', error.message);
@@ -415,25 +412,6 @@ class WebhookServer {
     this.webhookId = null;
   }
 
-  /**
-   * Manually delete webhook from Seam (if needed)
-   */
-  async deleteWebhook() {
-    if (this.webhookId) {
-      try {
-        await this.platform.seamAPI.deleteWebhook(this.webhookId);
-        this.debugLog(`Webhook ${this.webhookId} deleted from Seam`);
-        this.webhookId = null;
-        return true;
-      } catch (error) {
-        this.platform.log.error('Failed to delete webhook:', error.message);
-        return false;
-      }
-    } else {
-      this.platform.log.warn('No webhook ID available to delete');
-      return false;
-    }
-  }
 }
 
 module.exports = WebhookServer;

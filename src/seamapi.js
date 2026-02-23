@@ -10,6 +10,8 @@ class SeamAPI {
     this.apiKey = apiKey;
     this.log = log;
     this.baseUrl = 'connect.getseam.com';
+    // Keep-alive agent reuses TCP connections across requests
+    this.agent = new https.Agent({ keepAlive: true, maxSockets: 5 });
   }
 
   /**
@@ -23,6 +25,7 @@ class SeamAPI {
         path: path,
         method: method,
         timeout: 5000, // 5 second timeout
+        agent: this.agent,
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
@@ -32,8 +35,14 @@ class SeamAPI {
 
       const req = https.request(options, (res) => {
         let body = '';
+        const MAX_RESPONSE_SIZE = 1_048_576; // 1 MB
 
         res.on('data', (chunk) => {
+          if (body.length + chunk.length > MAX_RESPONSE_SIZE) {
+            req.destroy();
+            reject(new Error('Response too large'));
+            return;
+          }
           body += chunk;
         });
 
@@ -96,19 +105,6 @@ class SeamAPI {
   }
 
   /**
-   * List all devices
-   */
-  async listDevices() {
-    try {
-      const response = await this._request('POST', '/devices/list', {});
-      return response.devices || [];
-    } catch (error) {
-      this.log.error('Failed to list devices:', error.message);
-      throw error;
-    }
-  }
-
-  /**
    * Lock the device
    */
   async lockDoor(deviceId) {
@@ -146,7 +142,7 @@ class SeamAPI {
       const device = await this.getDevice(deviceId);
       
       // Convert battery level from 0-1 to 0-100 if needed
-      let batteryLevel = device.properties?.battery_level || 100;
+      let batteryLevel = device.properties?.battery_level ?? 100;
       if (batteryLevel <= 1) {
         batteryLevel = Math.round(batteryLevel * 100);
       }

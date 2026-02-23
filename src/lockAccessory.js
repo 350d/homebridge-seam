@@ -126,9 +126,9 @@ class LockAccessory {
    * Check if device supports door sensor
    */
   checkDoorSensorSupport(deviceData) {
-    // Check capabilities for door sensor support
-    const capabilities = deviceData.capabilities || [];
-    const supportsDoorSensor = capabilities.includes('door_sensor') || 
+    // Seam API uses capabilities_supported (not capabilities)
+    const capabilities = deviceData.capabilities_supported || deviceData.capabilities || [];
+    const supportsDoorSensor = capabilities.includes('door_sensor') ||
                                capabilities.includes('contact_sensor') ||
                                capabilities.includes('door_state');
     
@@ -168,11 +168,21 @@ class LockAccessory {
     try {
       const deviceData = await this.platform.seamAPI.getDevice(this.deviceId);
       
-      // Extract device information
+      // Extract device information (device_type is a string, not an object)
+      const rawMfr = deviceData.properties?.manufacturer;
+      const manufacturer = rawMfr && typeof rawMfr === 'string'
+        ? rawMfr.charAt(0).toUpperCase() + rawMfr.slice(1)
+        : this.deviceInfo.manufacturer;
+
+      const rawMdl = deviceData.properties?.model;
+      const model = (rawMdl && typeof rawMdl === 'object' ? rawMdl.display_name || rawMdl.name : null)
+        || (typeof rawMdl === 'string' ? rawMdl : null)
+        || this.deviceInfo.model;
+
       const info = {
         name: deviceData.properties?.name || this.deviceInfo.name,
-        manufacturer: deviceData.properties?.manufacturer || deviceData.device_type?.manufacturer || this.deviceInfo.manufacturer,
-        model: deviceData.properties?.model || deviceData.device_type?.model || this.deviceInfo.model,
+        manufacturer,
+        model,
         serialNumber: deviceData.properties?.serial_number || deviceData.device_id || this.deviceInfo.serialNumber,
         firmwareVersion: deviceData.properties?.firmware_version || this.deviceInfo.firmwareVersion
       };
@@ -188,30 +198,51 @@ class LockAccessory {
   }
 
   /**
-   * Update device info from API
+   * Update device info from API (or from already-fetched device data stored in this.device)
    */
   async updateDeviceInfo() {
+    // Map Seam device_type strings to human-readable manufacturer/model fallbacks.
+    // device_type is a plain string (e.g. "schlage_lock"), not an object.
+    const DEVICE_TYPE_MAP = {
+      'schlage_lock': { manufacturer: 'Schlage', model: 'Encode' },
+      'august_lock':  { manufacturer: 'August',  model: 'Smart Lock' },
+      'yale_lock':    { manufacturer: 'Yale',     model: 'Smart Lock' },
+      'kwikset_lock': { manufacturer: 'Kwikset', model: 'Smart Lock' },
+      'lockly_lock':  { manufacturer: 'Lockly',  model: 'Smart Lock' },
+      'nuki_lock':    { manufacturer: 'Nuki',     model: 'Smart Lock' },
+      'tedee_lock':   { manufacturer: 'Tedee',    model: 'Smart Lock' },
+    };
+
     try {
-      const deviceData = await this.platform.seamAPI.getDevice(this.deviceId);
-      
+      // Reuse device data passed in from the platform at startup to avoid a duplicate API call.
+      // Clear it afterward so subsequent refreshes go back to the API.
+      const deviceData = this.device ?? await this.platform.seamAPI.getDevice(this.deviceId);
+      this.device = null;
+
       this.debugLog('Raw device data from API:', JSON.stringify(deviceData, null, 2));
-      
-      // Extract device information
+
+      const mapped = DEVICE_TYPE_MAP[deviceData.device_type] || {};
+
+      // Capitalise API-returned manufacturer string (Seam returns e.g. 'schlage')
+      const rawManufacturer = deviceData.properties?.manufacturer;
+      const manufacturer = rawManufacturer && typeof rawManufacturer === 'string'
+        ? rawManufacturer.charAt(0).toUpperCase() + rawManufacturer.slice(1)
+        : mapped.manufacturer || 'Seam';
+
+      // model may be an object with display_name, a string, or absent
+      const rawModel = deviceData.properties?.model;
+      const model = (rawModel && typeof rawModel === 'object' ? rawModel.display_name || rawModel.name : null)
+        || (typeof rawModel === 'string' ? rawModel : null)
+        || mapped.model
+        || 'Smart Lock';
+
       const info = {
         name: deviceData.properties?.name || this.deviceInfo.name,
-        manufacturer: deviceData.properties?.model?.manufacturer_display_name || deviceData.properties?.manufacturer || 'Seam',
-        model: deviceData.properties?.model?.display_name || deviceData.properties?.model || 'Smart Lock',
+        manufacturer,
+        model,
         serialNumber: deviceData.properties?.serial_number || this.deviceId,
         firmwareVersion: deviceData.properties?.firmware_version || '1.0.0'
       };
-      
-      // Fix object references
-      if (typeof info.manufacturer === 'object') {
-        info.manufacturer = info.manufacturer.name || 'Seam';
-      }
-      if (typeof info.model === 'object') {
-        info.model = info.model.display_name || info.model.name || 'Smart Lock';
-      }
       
       this.debugLog(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
       this.debugLog(`Raw API response:`, JSON.stringify(deviceData, null, 2));

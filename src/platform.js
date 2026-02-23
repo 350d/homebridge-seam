@@ -243,7 +243,7 @@ class SeamPlatform {
   }
 
   /**
-   * Poll all devices for state updates
+   * Poll all devices for state updates (in parallel)
    */
   async pollDevices() {
     this.debugLog(`=== POLLING START ===`);
@@ -256,47 +256,52 @@ class SeamPlatform {
       return;
     }
 
-    this.debugLog(`Starting to poll ${this.accessories.length} accessories...`);
+    this.debugLog(`Starting to poll ${this.accessories.length} accessories in parallel...`);
 
-    for (let i = 0; i < this.accessories.length; i++) {
-      const accessory = this.accessories[i];
-      try {
-        this.debugLog(`[${i + 1}/${this.accessories.length}] Polling device: ${accessory.name} (${accessory.deviceId})`);
-        const startTime = Date.now();
-        
-        const status = await this.seamAPI.getLockStatus(accessory.deviceId);
-        const pollTime = Date.now() - startTime;
-        
-        this.debugLog(`[${i + 1}/${this.accessories.length}] API call completed in ${pollTime}ms for ${accessory.name}`);
-        
-        // Only update if we got valid data
-        if (status && typeof status === 'object') {
-          this.debugLog(`[${i + 1}/${this.accessories.length}] Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
-          
-          // Check if lock state changed before updating
-          const currentLocked = accessory.isLocked;
-          const newLocked = status.locked;
-          
-          if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
-            this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
-          } else {
-            this.debugLog(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
-          }
-          
-          // Use updateStateWithPriority for polling with current timestamp
-          accessory.updateStateWithPriority(status, 'polling', Date.now());
-          this.debugLog(`[${i + 1}/${this.accessories.length}] State update completed for ${accessory.name}`);
-        } else {
-          this.log.warn(`[${i + 1}/${this.accessories.length}] Invalid status received for ${accessory.name}:`, status);
-        }
-      } catch (error) {
-        this.log.error(`[${i + 1}/${this.accessories.length}] Failed to poll device ${accessory.name}:`, error.message);
-        this.debugLog(`[${i + 1}/${this.accessories.length}] Error details:`, error);
-        // Don't update state on error to avoid "no response"
+    const results = await Promise.allSettled(
+      this.accessories.map((accessory, i) => this.pollAccessory(accessory, i))
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        this.log.error(`[${i + 1}/${this.accessories.length}] Failed to poll device ${this.accessories[i].name}:`, result.reason?.message);
+        this.debugLog(`[${i + 1}/${this.accessories.length}] Error details:`, result.reason);
       }
-    }
-    
+    });
+
     this.debugLog(`=== POLLING COMPLETE ===`);
+  }
+
+  /**
+   * Poll a single accessory for state updates
+   */
+  async pollAccessory(accessory, index) {
+    const prefix = `[${index + 1}/${this.accessories.length}]`;
+    this.debugLog(`${prefix} Polling device: ${accessory.name} (${accessory.deviceId})`);
+    const startTime = Date.now();
+
+    const status = await this.seamAPI.getLockStatus(accessory.deviceId);
+    const pollTime = Date.now() - startTime;
+
+    this.debugLog(`${prefix} API call completed in ${pollTime}ms for ${accessory.name}`);
+
+    if (status && typeof status === 'object') {
+      this.debugLog(`${prefix} Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
+
+      const currentLocked = accessory.isLocked;
+      const newLocked = status.locked;
+
+      if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
+        this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      } else {
+        this.debugLog(`${prefix} No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      }
+
+      accessory.updateStateWithPriority(status, 'polling', Date.now());
+      this.debugLog(`${prefix} State update completed for ${accessory.name}`);
+    } else {
+      this.log.warn(`${prefix} Invalid status received for ${accessory.name}:`, status);
+    }
   }
 
   /**
