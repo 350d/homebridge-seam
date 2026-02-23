@@ -318,14 +318,9 @@ class LockAccessory {
   async getLockCurrentState() {
     this.debugLog(`HomeKit requested lock current state for ${this.name}`);
     
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout')), 5000);
-    });
-    
     try {
-      const statusPromise = this.platform.seamAPI.getLockStatus(this.deviceId);
-      const status = await Promise.race([statusPromise, timeoutPromise]);
+      // SeamAPI._request() already enforces a 5-second timeout
+      const status = await this.platform.seamAPI.getLockStatus(this.deviceId);
       
       const oldLocked = this.isLocked;
       this.isLocked = status.locked;
@@ -335,29 +330,18 @@ class LockAccessory {
         this.platform.log.info(`${this.name} lock state changed via API: ${oldLocked ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
       }
       
-      // Update battery level if available (always update when we have fresh data)
-      if (typeof status.battery_level === 'number') {
-        this.batteryLevel = status.battery_level;
-        this.isLowBattery = this.batteryLevel < 20;
-        this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
-      } else {
-        // Use cached battery data
-        const batteryData = await this.getBatteryLevelFromAPI();
-        this.batteryLevel = batteryData.level;
-        this.isLowBattery = batteryData.isLow;
-      }
+      // getLockStatus() always returns battery_level; fall back to cache only as a safety net
+      this.batteryLevel = status.battery_level ?? this.batteryCache.level;
+      this.isLowBattery = this.batteryLevel < 20;
+      this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
       
       const state = this.isLocked 
         ? this.Characteristic.LockCurrentState.SECURED 
         : this.Characteristic.LockCurrentState.UNSECURED;
       
       this.debugLog(`Lock current state for ${this.name}: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'} (state value: ${state})`);
-      
-      // Force update characteristics to ensure HomeKit gets the value
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockCurrentState)
-        .updateValue(state);
-      
+
+      // Keep LockTargetState in sync with current state
       this.lockService
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(state);
@@ -381,12 +365,7 @@ class LockAccessory {
         ? this.Characteristic.LockCurrentState.SECURED 
         : this.Characteristic.LockCurrentState.UNSECURED;
       this.debugLog(`Returning cached state for ${this.name}: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'} (state value: ${state})`);
-      
-      // Force update characteristics even on error
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockCurrentState)
-        .updateValue(state);
-      
+
       this.lockService
         .getCharacteristic(this.Characteristic.LockTargetState)
         .updateValue(state);
