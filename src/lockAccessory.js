@@ -154,55 +154,11 @@ class LockAccessory {
   }
 
   /**
-   * Get device info from cache or API
+   * Extract device info fields from a raw Seam device object.
+   * device_type is a plain string (e.g. "schlage_lock"), not an object.
+   * Falls back to mapped display names, then to whatever is already cached.
    */
-  async getDeviceInfoFromAPI() {
-    // Check cache first
-    if (this.isDeviceInfoCacheValid()) {
-      this.debugLog(`Using cached device info: ${this.deviceInfo.name}`);
-      return this.deviceInfo;
-    }
-
-    // Cache expired, fetch from API
-    this.debugLog(`Device info cache expired, fetching from API...`);
-    try {
-      const deviceData = await this.platform.seamAPI.getDevice(this.deviceId);
-      
-      // Extract device information (device_type is a string, not an object)
-      const rawMfr = deviceData.properties?.manufacturer;
-      const manufacturer = rawMfr && typeof rawMfr === 'string'
-        ? rawMfr.charAt(0).toUpperCase() + rawMfr.slice(1)
-        : this.deviceInfo.manufacturer;
-
-      const rawMdl = deviceData.properties?.model;
-      const model = (rawMdl && typeof rawMdl === 'object' ? rawMdl.display_name || rawMdl.name : null)
-        || (typeof rawMdl === 'string' ? rawMdl : null)
-        || this.deviceInfo.model;
-
-      const info = {
-        name: deviceData.properties?.name || this.deviceInfo.name,
-        manufacturer,
-        model,
-        serialNumber: deviceData.properties?.serial_number || deviceData.device_id || this.deviceInfo.serialNumber,
-        firmwareVersion: deviceData.properties?.firmware_version || this.deviceInfo.firmwareVersion
-      };
-      
-      this.updateDeviceInfoCache(info);
-      
-      return this.deviceInfo;
-    } catch (error) {
-      this.platform.log.error(`Failed to get device info from API:`, error.message);
-      // Return cached value even if expired
-      return this.deviceInfo;
-    }
-  }
-
-  /**
-   * Update device info from API (or from already-fetched device data stored in this.device)
-   */
-  async updateDeviceInfo() {
-    // Map Seam device_type strings to human-readable manufacturer/model fallbacks.
-    // device_type is a plain string (e.g. "schlage_lock"), not an object.
+  _extractDeviceInfo(deviceData) {
     const DEVICE_TYPE_MAP = {
       'schlage_lock': { manufacturer: 'Schlage', model: 'Encode' },
       'august_lock':  { manufacturer: 'August',  model: 'Smart Lock' },
@@ -212,7 +168,50 @@ class LockAccessory {
       'nuki_lock':    { manufacturer: 'Nuki',     model: 'Smart Lock' },
       'tedee_lock':   { manufacturer: 'Tedee',    model: 'Smart Lock' },
     };
+    const mapped = DEVICE_TYPE_MAP[deviceData.device_type] || {};
 
+    const rawMfr = deviceData.properties?.manufacturer;
+    const manufacturer = (rawMfr && typeof rawMfr === 'string')
+      ? rawMfr.charAt(0).toUpperCase() + rawMfr.slice(1)
+      : mapped.manufacturer || this.deviceInfo.manufacturer;
+
+    const rawMdl = deviceData.properties?.model;
+    const model = (rawMdl && typeof rawMdl === 'object' ? rawMdl.display_name || rawMdl.name : null)
+      || (typeof rawMdl === 'string' ? rawMdl : null)
+      || mapped.model || this.deviceInfo.model;
+
+    return {
+      name: deviceData.properties?.name || this.deviceInfo.name,
+      manufacturer,
+      model,
+      serialNumber: deviceData.properties?.serial_number || deviceData.device_id || this.deviceInfo.serialNumber,
+      firmwareVersion: deviceData.properties?.firmware_version || this.deviceInfo.firmwareVersion
+    };
+  }
+
+  /**
+   * Get device info from cache or API
+   */
+  async getDeviceInfoFromAPI() {
+    if (this.isDeviceInfoCacheValid()) {
+      this.debugLog(`Using cached device info: ${this.deviceInfo.name}`);
+      return this.deviceInfo;
+    }
+    this.debugLog(`Device info cache expired, fetching from API...`);
+    try {
+      const deviceData = await this.platform.seamAPI.getDevice(this.deviceId);
+      this.updateDeviceInfoCache(this._extractDeviceInfo(deviceData));
+      return this.deviceInfo;
+    } catch (error) {
+      this.platform.log.error(`Failed to get device info from API:`, error.message);
+      return this.deviceInfo;
+    }
+  }
+
+  /**
+   * Update device info from API (or from already-fetched device data stored in this.device)
+   */
+  async updateDeviceInfo() {
     try {
       // Reuse device data passed in from the platform at startup to avoid a duplicate API call.
       // Clear it afterward so subsequent refreshes go back to the API.
@@ -221,44 +220,17 @@ class LockAccessory {
 
       this.debugLog('Raw device data from API:', JSON.stringify(deviceData, null, 2));
 
-      const mapped = DEVICE_TYPE_MAP[deviceData.device_type] || {};
-
-      // Capitalise API-returned manufacturer string (Seam returns e.g. 'schlage')
-      const rawManufacturer = deviceData.properties?.manufacturer;
-      const manufacturer = rawManufacturer && typeof rawManufacturer === 'string'
-        ? rawManufacturer.charAt(0).toUpperCase() + rawManufacturer.slice(1)
-        : mapped.manufacturer || 'Seam';
-
-      // model may be an object with display_name, a string, or absent
-      const rawModel = deviceData.properties?.model;
-      const model = (rawModel && typeof rawModel === 'object' ? rawModel.display_name || rawModel.name : null)
-        || (typeof rawModel === 'string' ? rawModel : null)
-        || mapped.model
-        || 'Smart Lock';
-
-      const info = {
-        name: deviceData.properties?.name || this.deviceInfo.name,
-        manufacturer,
-        model,
-        serialNumber: deviceData.properties?.serial_number || this.deviceId,
-        firmwareVersion: deviceData.properties?.firmware_version || '1.0.0'
-      };
-      
+      const info = this._extractDeviceInfo(deviceData);
       this.debugLog(`Device info: ${info.manufacturer} ${info.model} (SN: ${info.serialNumber})`);
-      this.debugLog(`Raw API response:`, JSON.stringify(deviceData, null, 2));
       this.debugLog(`Extracted info:`, JSON.stringify(info, null, 2));
-      
-      // Check if device supports door sensor
+
       this.checkDoorSensorSupport(deviceData);
-      
       this.updateDeviceInfoCache(info);
-      
-      // Update name if it changed
+
       if (info.name !== this.name) {
         this.name = info.name;
         this.debugLog(`Device name updated to: ${this.name}`);
       }
-      
       this.debugLog(`Device info loaded: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
     } catch (error) {
       this.platform.log.error(`Failed to load device info:`, error.message);
