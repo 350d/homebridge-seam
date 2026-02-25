@@ -156,7 +156,7 @@ class WebhookServer {
    * Handle incoming HTTP request
    */
   handleRequest(req, res) {
-    this.debugLog(`Webhook request: ${req.method} ${req.url} from ${req.connection.remoteAddress}`);
+    this.debugLog(`Webhook request: ${req.method} ${req.url} from ${req.socket?.remoteAddress}`);
     
     // Only handle POST requests to webhook path
     if (req.method !== 'POST' || req.url !== this.path) {

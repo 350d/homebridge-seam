@@ -220,21 +220,31 @@ class LockAccessory {
   }
 
   /**
+   * Configure the platform accessory's built-in AccessoryInformation service
+   * with real device data. Must be called after setupAccessory() and after the
+   * platform accessory has been resolved (cached or newly created).
+   */
+  configurePlatformAccessory(platformAccessory) {
+    const infoService = platformAccessory.getService(this.Service.AccessoryInformation);
+    if (infoService) {
+      infoService
+        .setCharacteristic(this.Characteristic.Manufacturer, this.deviceInfo.manufacturer)
+        .setCharacteristic(this.Characteristic.Model, this.deviceInfo.model)
+        .setCharacteristic(this.Characteristic.SerialNumber, this.deviceInfo.serialNumber)
+        .setCharacteristic(this.Characteristic.FirmwareRevision, this.deviceInfo.firmwareVersion);
+    }
+    this.informationService = infoService;
+  }
+
+  /**
    * Setup accessory services
    */
   async setupAccessory() {
     // Get real device info first
     await this.updateDeviceInfo();
-    
-    // Accessory Information Service with real data
+
     this.debugLog(`Setting HomeKit characteristics: Manufacturer=${this.deviceInfo.manufacturer}, Model=${this.deviceInfo.model}, Serial=${this.deviceInfo.serialNumber}, Firmware=${this.deviceInfo.firmwareVersion}`);
-    
-    this.informationService = new this.Service.AccessoryInformation()
-      .setCharacteristic(this.Characteristic.Manufacturer, this.deviceInfo.manufacturer)
-      .setCharacteristic(this.Characteristic.Model, this.deviceInfo.model)
-      .setCharacteristic(this.Characteristic.SerialNumber, this.deviceInfo.serialNumber)
-      .setCharacteristic(this.Characteristic.FirmwareRevision, this.deviceInfo.firmwareVersion);
-    
+
     // Lock Mechanism Service
     this.lockService = new this.Service.LockMechanism(this.name);
     
@@ -279,17 +289,10 @@ class LockAccessory {
    * Get all services
    */
   getServices() {
-    const services = [
-      this.informationService,
-      this.lockService,
-      this.batteryService
-    ];
-    
-    // Add contact sensor only if device supports it
+    const services = [this.lockService, this.batteryService];
     if (this.contactService) {
       services.push(this.contactService);
     }
-    
     return services;
   }
 
@@ -441,26 +444,32 @@ class LockAccessory {
   }
 
   /**
+   * Race a promise against a timeout, cleaning up the timer when done
+   */
+  _withTimeout(promise, ms, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  /**
    * Execute lock command with improved race condition handling
    */
   async executeLockCommand(shouldLock) {
     this.platform.log.info(`Executing ${shouldLock ? 'lock' : 'unlock'} command for ${this.name}...`);
-    
+
     const commandTime = Date.now();
     this.lastCommandTime = commandTime;
-    
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Command timeout')), 15000);
-    });
-    
+
     try {
-      const commandPromise = shouldLock 
+      const commandPromise = shouldLock
         ? this.platform.seamAPI.lockDoor(this.deviceId)
         : this.platform.seamAPI.unlockDoor(this.deviceId);
-      
+
       this.debugLog(`Sending ${shouldLock ? 'lock' : 'unlock'} request to Seam API for ${this.name}`);
-      await Promise.race([commandPromise, timeoutPromise]);
+      await this._withTimeout(commandPromise, 15000, 'Command timeout');
       this.debugLog(`Seam API ${shouldLock ? 'lock' : 'unlock'} command completed for ${this.name}`);
 
       // Update state with command priority

@@ -106,6 +106,23 @@ class SeamPlatform {
       this.log.info(`Device setup completed. Total accessories: ${this.accessories.length}`);
       this.debugLog(`Accessories list:`, this.accessories.map(acc => ({ name: acc.name, deviceId: acc.deviceId })));
 
+      // Remove stale cached accessories no longer in config
+      const configuredUUIDs = new Set(this.accessories.map(acc => acc.getUUID()));
+      const staleAccessories = [];
+      for (const [uuid, accessory] of this.platformAccessories) {
+        if (!configuredUUIDs.has(uuid)) {
+          this.log.info(`Removing stale cached accessory: ${accessory.displayName}`);
+          staleAccessories.push(accessory);
+        }
+      }
+      if (staleAccessories.length > 0) {
+        this.api.unregisterPlatformAccessories('@350d/homebridge-seam', 'SeamLock', staleAccessories);
+        for (const acc of staleAccessories) {
+          this.platformAccessories.delete(acc.UUID);
+        }
+        this.log.info(`Removed ${staleAccessories.length} stale cached accessor${staleAccessories.length === 1 ? 'y' : 'ies'}`);
+      }
+
       // Start polling for state updates
       this.log.info('Starting polling for state updates...');
       this.startPolling();
@@ -133,6 +150,12 @@ class SeamPlatform {
     try {
       if (!deviceConfig.deviceId) {
         this.log.warn('Device configuration missing deviceId, skipping');
+        return;
+      }
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(deviceConfig.deviceId)) {
+        this.log.warn(`Device ID "${deviceConfig.deviceId}" is not a valid UUID, skipping`);
         return;
       }
 
@@ -183,11 +206,14 @@ class SeamPlatform {
         this.log.info(`Accessory ${lockAccessory.name} registered successfully`);
       }
 
+      // Set device info on the platform accessory's built-in AccessoryInformation
+      lockAccessory.configurePlatformAccessory(platformAccessory);
+
       // Add services to platform accessory
       const services = lockAccessory.getServices();
-      
+
       this.log.info(`Adding ${services.length} services to platform accessory for ${lockAccessory.name}`);
-      
+
       // Clear all services except AccessoryInformation
       const existingServices = platformAccessory.services.slice();
       for (const service of existingServices) {
@@ -196,14 +222,13 @@ class SeamPlatform {
           platformAccessory.removeService(service);
         }
       }
-      
+
       // Add new services
-      for (let i = 1; i < services.length; i++) {
-        const service = services[i];
+      for (const service of services) {
         this.debugLog(`Adding service: ${service.UUID} (${service.displayName})`);
         platformAccessory.addService(service);
       }
-      
+
       this.log.info(`Platform accessory now has ${platformAccessory.services.length} services`);
 
       this.log.info(`Device ${lockAccessory.name} configured successfully`);
