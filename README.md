@@ -10,7 +10,7 @@ A Homebridge plugin for smart locks via Seam.co API. Control your August, Yale, 
 - 🔋 **Battery Monitoring** - Track battery levels with low battery alerts and 1-hour caching
 - 🚪 **Door Sensor** - Monitor door open/closed status (if supported by device)
 - 🔄 **Real-time Updates** - Automatic webhook management with instant state synchronization
-- 🛡️ **Secure Webhooks** - Random UUID paths and auto-generated secrets for security
+- 🛡️ **Secure Webhooks** - Svix signature verification with Seam-provided secrets
 - ⚡ **Lightweight** - Written in pure JavaScript with zero external dependencies
 - 🎯 **Simple Setup** - Easy configuration through Homebridge UI
 - 🔧 **Auto Webhook Management** - Webhooks are created/deleted automatically
@@ -19,8 +19,8 @@ A Homebridge plugin for smart locks via Seam.co API. Control your August, Yale, 
 
 ## Requirements
 
-- Node.js 14.18.1 or higher
-- Homebridge 1.3.5 or higher
+- Node.js 18.20.4, 20.15.1, 22, or 24
+- Homebridge 1.6.0 or 2.0
 - Active Seam.co account with API key
 - Smart locks already connected to Seam.co
 
@@ -162,7 +162,7 @@ Set webhook URL to `https://your-domain.com` in plugin configuration.
 
 - **Automatic Management** - Webhooks are created/deleted automatically
 - **Secure Paths** - Each webhook gets a unique random UUID path
-- **Auto-generated Secrets** - Security secrets are generated automatically
+- **Svix Verification** - Webhook secrets from Seam API with mandatory signature checks
 - **Persistent Configuration** - Webhook settings survive plugin updates
 
 **Note:** Without webhooks, the plugin uses polling (default: every 60 seconds) to check lock state.

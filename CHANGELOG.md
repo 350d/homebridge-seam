@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.11.0] - 2026-06-07
+
+### Fixed
+- Schlage Encode and other locks: correct manufacturer/model from Seam `device_type` string
+- Battery 0% and 1% misreporting; lock state defaults to LOCKED when API omits `locked`
+- Homebridge 2.0: AccessoryInformation on platform accessory; stale cached accessories removed
+- Webhook signature verification rewritten for Seam/Svix (`svix-id`, `svix-timestamp`, `svix-signature`)
+
+### Improved
+- API retry with exponential backoff; parallel device polling; HTTPS keep-alive connections
+- Door sensor detection via `capabilities_supported`
+
 ## [2.10.23] - 2025-01-10
 
 ### Changed
