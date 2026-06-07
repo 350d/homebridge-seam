@@ -106,6 +106,23 @@ class SeamPlatform {
       this.log.info(`Device setup completed. Total accessories: ${this.accessories.length}`);
       this.debugLog(`Accessories list:`, this.accessories.map(acc => ({ name: acc.name, deviceId: acc.deviceId })));
 
+      // Remove stale cached accessories no longer in config
+      const configuredUUIDs = new Set(this.accessories.map(acc => acc.getUUID()));
+      const staleAccessories = [];
+      for (const [uuid, accessory] of this.platformAccessories) {
+        if (!configuredUUIDs.has(uuid)) {
+          this.log.info(`Removing stale cached accessory: ${accessory.displayName}`);
+          staleAccessories.push(accessory);
+        }
+      }
+      if (staleAccessories.length > 0) {
+        this.api.unregisterPlatformAccessories('@350d/homebridge-seam', 'SeamLock', staleAccessories);
+        for (const acc of staleAccessories) {
+          this.platformAccessories.delete(acc.UUID);
+        }
+        this.log.info(`Removed ${staleAccessories.length} stale cached accessor${staleAccessories.length === 1 ? 'y' : 'ies'}`);
+      }
+
       // Start polling for state updates
       this.log.info('Starting polling for state updates...');
       this.startPolling();
@@ -133,6 +150,12 @@ class SeamPlatform {
     try {
       if (!deviceConfig.deviceId) {
         this.log.warn('Device configuration missing deviceId, skipping');
+        return;
+      }
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(deviceConfig.deviceId)) {
+        this.log.warn(`Device ID "${deviceConfig.deviceId}" is not a valid UUID, skipping`);
         return;
       }
 
@@ -183,11 +206,14 @@ class SeamPlatform {
         this.log.info(`Accessory ${lockAccessory.name} registered successfully`);
       }
 
+      // Set device info on the platform accessory's built-in AccessoryInformation
+      lockAccessory.configurePlatformAccessory(platformAccessory);
+
       // Add services to platform accessory
       const services = lockAccessory.getServices();
-      
+
       this.log.info(`Adding ${services.length} services to platform accessory for ${lockAccessory.name}`);
-      
+
       // Clear all services except AccessoryInformation
       const existingServices = platformAccessory.services.slice();
       for (const service of existingServices) {
@@ -196,14 +222,13 @@ class SeamPlatform {
           platformAccessory.removeService(service);
         }
       }
-      
+
       // Add new services
-      for (let i = 1; i < services.length; i++) {
-        const service = services[i];
+      for (const service of services) {
         this.debugLog(`Adding service: ${service.UUID} (${service.displayName})`);
         platformAccessory.addService(service);
       }
-      
+
       this.log.info(`Platform accessory now has ${platformAccessory.services.length} services`);
 
       this.log.info(`Device ${lockAccessory.name} configured successfully`);
@@ -243,7 +268,7 @@ class SeamPlatform {
   }
 
   /**
-   * Poll all devices for state updates
+   * Poll all devices for state updates (in parallel)
    */
   async pollDevices() {
     this.debugLog(`=== POLLING START ===`);
@@ -256,47 +281,52 @@ class SeamPlatform {
       return;
     }
 
-    this.debugLog(`Starting to poll ${this.accessories.length} accessories...`);
+    this.debugLog(`Starting to poll ${this.accessories.length} accessories in parallel...`);
 
-    for (let i = 0; i < this.accessories.length; i++) {
-      const accessory = this.accessories[i];
-      try {
-        this.debugLog(`[${i + 1}/${this.accessories.length}] Polling device: ${accessory.name} (${accessory.deviceId})`);
-        const startTime = Date.now();
-        
-        const status = await this.seamAPI.getLockStatus(accessory.deviceId);
-        const pollTime = Date.now() - startTime;
-        
-        this.debugLog(`[${i + 1}/${this.accessories.length}] API call completed in ${pollTime}ms for ${accessory.name}`);
-        
-        // Only update if we got valid data
-        if (status && typeof status === 'object') {
-          this.debugLog(`[${i + 1}/${this.accessories.length}] Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
-          
-          // Check if lock state changed before updating
-          const currentLocked = accessory.isLocked;
-          const newLocked = status.locked;
-          
-          if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
-            this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
-          } else {
-            this.debugLog(`[${i + 1}/${this.accessories.length}] No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
-          }
-          
-          // Use updateStateWithPriority for polling with current timestamp
-          accessory.updateStateWithPriority(status, 'polling', Date.now());
-          this.debugLog(`[${i + 1}/${this.accessories.length}] State update completed for ${accessory.name}`);
-        } else {
-          this.log.warn(`[${i + 1}/${this.accessories.length}] Invalid status received for ${accessory.name}:`, status);
-        }
-      } catch (error) {
-        this.log.error(`[${i + 1}/${this.accessories.length}] Failed to poll device ${accessory.name}:`, error.message);
-        this.debugLog(`[${i + 1}/${this.accessories.length}] Error details:`, error);
-        // Don't update state on error to avoid "no response"
+    const results = await Promise.allSettled(
+      this.accessories.map((accessory, i) => this.pollAccessory(accessory, i))
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        this.log.error(`[${i + 1}/${this.accessories.length}] Failed to poll device ${this.accessories[i].name}:`, result.reason?.message);
+        this.debugLog(`[${i + 1}/${this.accessories.length}] Error details:`, result.reason);
       }
-    }
-    
+    });
+
     this.debugLog(`=== POLLING COMPLETE ===`);
+  }
+
+  /**
+   * Poll a single accessory for state updates
+   */
+  async pollAccessory(accessory, index) {
+    const prefix = `[${index + 1}/${this.accessories.length}]`;
+    this.debugLog(`${prefix} Polling device: ${accessory.name} (${accessory.deviceId})`);
+    const startTime = Date.now();
+
+    const status = await this.seamAPI.getLockStatus(accessory.deviceId);
+    const pollTime = Date.now() - startTime;
+
+    this.debugLog(`${prefix} API call completed in ${pollTime}ms for ${accessory.name}`);
+
+    if (status && typeof status === 'object') {
+      this.debugLog(`${prefix} Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
+
+      const currentLocked = accessory.isLocked;
+      const newLocked = status.locked;
+
+      if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
+        this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      } else {
+        this.debugLog(`${prefix} No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      }
+
+      accessory.updateStateWithPriority(status, 'polling', Date.now());
+      this.debugLog(`${prefix} State update completed for ${accessory.name}`);
+    } else {
+      this.log.warn(`${prefix} Invalid status received for ${accessory.name}:`, status);
+    }
   }
 
   /**

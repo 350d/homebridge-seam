@@ -10,6 +10,8 @@ class SeamAPI {
     this.apiKey = apiKey;
     this.log = log;
     this.baseUrl = 'connect.getseam.com';
+    // Keep-alive agent reuses TCP connections across requests
+    this.agent = new https.Agent({ keepAlive: true, maxSockets: 5 });
   }
 
   /**
@@ -23,6 +25,7 @@ class SeamAPI {
         path: path,
         method: method,
         timeout: 5000, // 5 second timeout
+        agent: this.agent,
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
@@ -32,8 +35,14 @@ class SeamAPI {
 
       const req = https.request(options, (res) => {
         let body = '';
+        const MAX_RESPONSE_SIZE = 1_048_576; // 1 MB
 
         res.on('data', (chunk) => {
+          if (body.length + chunk.length > MAX_RESPONSE_SIZE) {
+            req.destroy();
+            reject(new Error('Response too large'));
+            return;
+          }
           body += chunk;
         });
 
@@ -81,11 +90,43 @@ class SeamAPI {
   }
 
   /**
+   * Make HTTP request with retry and exponential backoff for transient failures
+   */
+  async _requestWithRetry(method, path, data = null, maxRetries = 2) {
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this._request(method, path, data);
+      } catch (error) {
+        lastError = error;
+        const msg = error.message || '';
+        const isRetryable =
+          msg.includes('Request timeout') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ECONNREFUSED') ||
+          msg.includes('ETIMEDOUT') ||
+          msg.includes('API Error 429') ||
+          msg.includes('API Error 5');
+
+        if (!isRetryable || attempt === maxRetries) {
+          throw error;
+        }
+
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+        const jitter = Math.random() * 500;
+        this.log.warn(`API request failed (attempt ${attempt + 1}/${maxRetries + 1}): ${msg}. Retrying in ${Math.round(backoffMs + jitter)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs + jitter));
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Get device information
    */
   async getDevice(deviceId) {
     try {
-      const response = await this._request('POST', '/devices/get', {
+      const response = await this._requestWithRetry('POST', '/devices/get', {
         device_id: deviceId
       });
       return response.device;
@@ -96,24 +137,11 @@ class SeamAPI {
   }
 
   /**
-   * List all devices
-   */
-  async listDevices() {
-    try {
-      const response = await this._request('POST', '/devices/list', {});
-      return response.devices || [];
-    } catch (error) {
-      this.log.error('Failed to list devices:', error.message);
-      throw error;
-    }
-  }
-
-  /**
    * Lock the device
    */
   async lockDoor(deviceId) {
     try {
-      const response = await this._request('POST', '/locks/lock_door', {
+      const response = await this._requestWithRetry('POST', '/locks/lock_door', {
         device_id: deviceId
       });
       return response.action_attempt;
@@ -128,7 +156,7 @@ class SeamAPI {
    */
   async unlockDoor(deviceId) {
     try {
-      const response = await this._request('POST', '/locks/unlock_door', {
+      const response = await this._requestWithRetry('POST', '/locks/unlock_door', {
         device_id: deviceId
       });
       return response.action_attempt;
@@ -145,17 +173,22 @@ class SeamAPI {
     try {
       const device = await this.getDevice(deviceId);
       
-      // Convert battery level from 0-1 to 0-100 if needed
-      let batteryLevel = device.properties?.battery_level || 100;
-      if (batteryLevel <= 1) {
+      // Convert battery level from 0-1 fraction to 0-100 percentage if needed
+      let batteryLevel = device.properties?.battery_level;
+      if (batteryLevel == null) {
+        batteryLevel = 100;
+      } else if (batteryLevel > 0 && batteryLevel < 1) {
         batteryLevel = Math.round(batteryLevel * 100);
       }
-      
+      batteryLevel = Math.max(0, Math.min(100, Math.round(batteryLevel)));
+
       return {
-        locked: device.properties?.locked || false,
+        locked: typeof device.properties?.locked === 'boolean'
+          ? device.properties.locked
+          : true,  // Default to LOCKED when state is unknown
         battery_level: batteryLevel,
-        online: device.properties?.online || false,
-        door_open: device.properties?.door_open || false
+        online: device.properties?.online ?? false,
+        door_open: device.properties?.door_open ?? false
       };
     } catch (error) {
       this.log.error(`Failed to get lock status for ${deviceId}:`, error.message);
