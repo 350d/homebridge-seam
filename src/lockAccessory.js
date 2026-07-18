@@ -309,6 +309,7 @@ class LockAccessory {
           this.batteryLevel = 10;
           this.isLowBattery = true;
           this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
+          this.platform.log.info(`${this.name} Battery set to ${this.batteryLevel}% due to offline status`);
         }
       }
     } catch (error) {
@@ -408,28 +409,38 @@ class LockAccessory {
    * Set initial characteristic values after services are added to platform accessory
    */
   setInitialCharacteristicValues() {
-    this.debugLog(`Setting initial characteristic values for ${this.name}`);
-    
-    // Set initial StatusFault value if device is offline
-    if (this.hasStatusFault) {
-      this.lockService
-        .getCharacteristic(this.Characteristic.StatusFault)
-        .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-      this.platform.log.info(`${this.name} StatusFault set to GENERAL_FAULT (device offline)`);
+    try {
+      this.platform.log.info(`Setting initial values for ${this.name}: Battery=${this.batteryLevel}%, StatusFault=${this.hasStatusFault ? 'FAULT' : 'NO_FAULT'}`);
+      
+      // Set initial StatusFault value if device is offline
+      if (this.hasStatusFault) {
+        this.lockService
+          .getCharacteristic(this.Characteristic.StatusFault)
+          .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+        this.platform.log.info(`${this.name} StatusFault set to GENERAL_FAULT (device offline)`);
+      }
+      
+      // Set initial battery values
+      this.platform.log.info(`${this.name} Setting battery to ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
+      
+      this.batteryService
+        .getCharacteristic(this.Characteristic.BatteryLevel)
+        .updateValue(this.batteryLevel);
+      
+      this.platform.log.info(`${this.name} Battery level characteristic updated`);
+      
+      this.batteryService
+        .getCharacteristic(this.Characteristic.StatusLowBattery)
+        .updateValue(this.isLowBattery 
+          ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
+          : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
+      
+      this.platform.log.info(`${this.name} Battery status characteristic updated`);
+      this.platform.log.info(`${this.name} Initial characteristics updated successfully`);
+    } catch (error) {
+      this.platform.log.error(`Failed to set initial characteristics for ${this.name}:`, error.message);
+      this.platform.log.error(`Error stack:`, error.stack);
     }
-    
-    // Set initial battery values
-    this.batteryService
-      .getCharacteristic(this.Characteristic.BatteryLevel)
-      .updateValue(this.batteryLevel);
-    
-    this.batteryService
-      .getCharacteristic(this.Characteristic.StatusLowBattery)
-      .updateValue(this.isLowBattery 
-        ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
-        : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
-    
-    this.debugLog(`Initial values set - Battery: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'}), StatusFault: ${this.hasStatusFault ? 'FAULT' : 'NO FAULT'}`);
   }
 
   /**
