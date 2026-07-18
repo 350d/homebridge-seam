@@ -113,6 +113,23 @@ class LockAccessory {
       
       this.updateBatteryCache(level, isLow);
       
+      // Update fault status based on online status
+      if (typeof status.online === 'boolean') {
+        if (status.online && this.hasStatusFault) {
+          this.hasStatusFault = false;
+          this.lockService
+            .getCharacteristic(this.Characteristic.StatusFault)
+            .updateValue(this.Characteristic.StatusFault.NO_FAULT);
+          this.platform.log.info(`${this.name} is back online`);
+        } else if (!status.online && !this.hasStatusFault) {
+          this.hasStatusFault = true;
+          this.lockService
+            .getCharacteristic(this.Characteristic.StatusFault)
+            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+          this.platform.log.warn(`${this.name} is offline`);
+        }
+      }
+      
       return { level, isLow };
     } catch (error) {
       this.platform.log.error(`Failed to get battery level from API:`, error.message);
@@ -357,13 +374,21 @@ class LockAccessory {
       
       this.debugLog(`Lock current state for ${this.name}: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'} (state value: ${state})`);
 
-      // Clear fault status on successful status retrieval
-      if (this.hasStatusFault) {
-        this.hasStatusFault = false;
-        this.lockService
-          .getCharacteristic(this.Characteristic.StatusFault)
-          .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-        this.platform.log.info(`${this.name} is back online`);
+      // Update fault status based on online status from API
+      if (typeof status.online === 'boolean') {
+        if (status.online && this.hasStatusFault) {
+          this.hasStatusFault = false;
+          this.lockService
+            .getCharacteristic(this.Characteristic.StatusFault)
+            .updateValue(this.Characteristic.StatusFault.NO_FAULT);
+          this.platform.log.info(`${this.name} is back online`);
+        } else if (!status.online && !this.hasStatusFault) {
+          this.hasStatusFault = true;
+          this.lockService
+            .getCharacteristic(this.Characteristic.StatusFault)
+            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+          this.platform.log.warn(`${this.name} is offline`);
+        }
       }
 
       // Keep LockTargetState in sync with current state
@@ -668,13 +693,23 @@ class LockAccessory {
   updateState(state) {
     this.debugLog(`Updating state for ${this.name}:`, state);
     
-    // Clear fault status when receiving update from server (device is online)
-    if (this.hasStatusFault) {
-      this.hasStatusFault = false;
-      this.lockService
-        .getCharacteristic(this.Characteristic.StatusFault)
-        .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-      this.platform.log.info(`${this.name} is back online (received state update)`);
+    // Handle device online/offline status
+    if (typeof state.online === 'boolean') {
+      if (state.online && this.hasStatusFault) {
+        // Device came back online
+        this.hasStatusFault = false;
+        this.lockService
+          .getCharacteristic(this.Characteristic.StatusFault)
+          .updateValue(this.Characteristic.StatusFault.NO_FAULT);
+        this.platform.log.info(`${this.name} is back online`);
+      } else if (!state.online && !this.hasStatusFault) {
+        // Device went offline
+        this.hasStatusFault = true;
+        this.lockService
+          .getCharacteristic(this.Characteristic.StatusFault)
+          .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+        this.platform.log.warn(`${this.name} went offline`);
+      }
     }
     
     // Update lock state

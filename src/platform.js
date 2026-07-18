@@ -305,27 +305,40 @@ class SeamPlatform {
     this.debugLog(`${prefix} Polling device: ${accessory.name} (${accessory.deviceId})`);
     const startTime = Date.now();
 
-    const status = await this.seamAPI.getLockStatus(accessory.deviceId);
-    const pollTime = Date.now() - startTime;
+    try {
+      const status = await this.seamAPI.getLockStatus(accessory.deviceId);
+      const pollTime = Date.now() - startTime;
 
-    this.debugLog(`${prefix} API call completed in ${pollTime}ms for ${accessory.name}`);
+      this.debugLog(`${prefix} API call completed in ${pollTime}ms for ${accessory.name}`);
 
-    if (status && typeof status === 'object') {
-      this.debugLog(`${prefix} Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
+      if (status && typeof status === 'object') {
+        this.debugLog(`${prefix} Received status for ${accessory.name}:`, JSON.stringify(status, null, 2));
 
-      const currentLocked = accessory.isLocked;
-      const newLocked = status.locked;
+        const currentLocked = accessory.isLocked;
+        const newLocked = status.locked;
 
-      if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
-        this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+        if (typeof newLocked === 'boolean' && newLocked !== currentLocked) {
+          this.log.info(`[POLLING] Detected lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'} → ${newLocked ? 'LOCKED' : 'UNLOCKED'}`);
+        } else {
+          this.debugLog(`${prefix} No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
+        }
+
+        accessory.updateStateWithPriority(status, 'polling', Date.now());
+        this.debugLog(`${prefix} State update completed for ${accessory.name}`);
       } else {
-        this.debugLog(`${prefix} No lock state change for ${accessory.name}: ${currentLocked ? 'LOCKED' : 'UNLOCKED'}`);
+        this.log.warn(`${prefix} Invalid status received for ${accessory.name}:`, status);
       }
-
-      accessory.updateStateWithPriority(status, 'polling', Date.now());
-      this.debugLog(`${prefix} State update completed for ${accessory.name}`);
-    } else {
-      this.log.warn(`${prefix} Invalid status received for ${accessory.name}:`, status);
+    } catch (error) {
+      this.debugLog(`${prefix} Error polling ${accessory.name}:`, error.message);
+      
+      // If device is offline, update state to reflect that
+      if (error.message && error.message.includes('Device Offline')) {
+        this.debugLog(`${prefix} Device offline detected during polling for ${accessory.name}`);
+        accessory.updateStateWithPriority({ online: false }, 'polling', Date.now());
+      }
+      
+      // Re-throw error to be caught by Promise.allSettled
+      throw error;
     }
   }
 
