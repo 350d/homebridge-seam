@@ -438,6 +438,12 @@ class LockAccessory {
   async getLockCurrentState() {
     this.debugLog(`HomeKit requested lock current state for ${this.name}`);
     
+    // If device is known to be offline, throw error immediately
+    if (this.hasStatusFault) {
+      this.debugLog(`${this.name} is offline, throwing SERVICE_COMMUNICATION_FAILURE`);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+    
     try {
       // SeamAPI._request() already enforces a 5-second timeout
       const status = await this.platform.seamAPI.getLockStatus(this.deviceId);
@@ -529,6 +535,13 @@ class LockAccessory {
    */
   async getLockTargetState() {
     this.debugLog(`HomeKit requested lock target state for ${this.name}`);
+    
+    // If device is known to be offline, throw error immediately
+    if (this.hasStatusFault) {
+      this.debugLog(`${this.name} is offline, throwing SERVICE_COMMUNICATION_FAILURE`);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+    
     const state = this.isLocked 
       ? this.Characteristic.LockTargetState.SECURED 
       : this.Characteristic.LockTargetState.UNSECURED;
