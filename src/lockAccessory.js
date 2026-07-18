@@ -32,6 +32,7 @@ class LockAccessory {
     this.isDoorOpen = false;
     this.supportsDoorSensor = false;
     this.hasStatusFault = false;
+    this.isUpdatingFaultStatus = false;
     
     // Command state
     this.isCommandInProgress = false;
@@ -74,6 +75,43 @@ class LockAccessory {
   }
 
   /**
+   * Update status fault with race condition protection
+   */
+  updateStatusFault(isOnline) {
+    // Prevent race conditions
+    if (this.isUpdatingFaultStatus) {
+      this.debugLog(`StatusFault update already in progress for ${this.name}, skipping`);
+      return;
+    }
+
+    try {
+      this.isUpdatingFaultStatus = true;
+
+      if (isOnline && this.hasStatusFault) {
+        // Device came back online
+        this.hasStatusFault = false;
+        this.lockService
+          .getCharacteristic(this.Characteristic.StatusFault)
+          .updateValue(this.Characteristic.StatusFault.NO_FAULT);
+        this.platform.log.info(`${this.name} is back online`);
+        
+        // Invalidate battery cache to get fresh data on next request
+        this.batteryCache.lastUpdated = 0;
+        this.debugLog(`Battery cache invalidated for ${this.name} after coming back online`);
+      } else if (!isOnline && !this.hasStatusFault) {
+        // Device went offline
+        this.hasStatusFault = true;
+        this.lockService
+          .getCharacteristic(this.Characteristic.StatusFault)
+          .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+        this.platform.log.warn(`${this.name} is offline`);
+      }
+    } finally {
+      this.isUpdatingFaultStatus = false;
+    }
+  }
+
+  /**
    * Check if battery cache is valid
    */
   isBatteryCacheValid() {
@@ -104,6 +142,17 @@ class LockAccessory {
       };
     }
 
+    // If device is offline, extend cache and don't make API request
+    if (this.hasStatusFault) {
+      this.debugLog(`Device offline, using cached battery and extending cache`);
+      // Extend cache by updating timestamp
+      this.batteryCache.lastUpdated = Date.now();
+      return {
+        level: this.batteryCache.level,
+        isLow: this.batteryCache.isLow
+      };
+    }
+
     // Cache expired, fetch from API
     this.debugLog(`Battery cache expired, fetching from API...`);
     try {
@@ -115,19 +164,7 @@ class LockAccessory {
       
       // Update fault status based on online status
       if (typeof status.online === 'boolean') {
-        if (status.online && this.hasStatusFault) {
-          this.hasStatusFault = false;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-          this.platform.log.info(`${this.name} is back online`);
-        } else if (!status.online && !this.hasStatusFault) {
-          this.hasStatusFault = true;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-          this.platform.log.warn(`${this.name} is offline`);
-        }
+        this.updateStatusFault(status.online);
       }
       
       return { level, isLow };
@@ -139,13 +176,7 @@ class LockAccessory {
         this.platform.log.warn(`${this.name} is offline when checking battery`);
         
         // Update StatusFault to indicate device is unavailable
-        if (!this.hasStatusFault) {
-          this.hasStatusFault = true;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-          this.platform.log.info(`${this.name} marked as having fault (offline)`);
-        }
+        this.updateStatusFault(false);
         
         // Set battery to low to indicate potential battery issue
         return {
@@ -376,19 +407,7 @@ class LockAccessory {
 
       // Update fault status based on online status from API
       if (typeof status.online === 'boolean') {
-        if (status.online && this.hasStatusFault) {
-          this.hasStatusFault = false;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-          this.platform.log.info(`${this.name} is back online`);
-        } else if (!status.online && !this.hasStatusFault) {
-          this.hasStatusFault = true;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-          this.platform.log.warn(`${this.name} is offline`);
-        }
+        this.updateStatusFault(status.online);
       }
 
       // Keep LockTargetState in sync with current state
@@ -416,13 +435,7 @@ class LockAccessory {
         this.platform.log.warn(`${this.name} is offline (low battery or connection issue)`);
         
         // Update StatusFault to indicate device is unavailable
-        if (!this.hasStatusFault) {
-          this.hasStatusFault = true;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-          this.platform.log.info(`${this.name} marked as having fault (offline)`);
-        }
+        this.updateStatusFault(false);
         
         // Also set battery to low to indicate potential battery issue
         if (this.batteryLevel > 20) {
@@ -597,13 +610,7 @@ class LockAccessory {
       this.debugLog(`${this.name} command completed, webhooks will handle any additional updates`);
       
       // Clear fault status on successful command
-      if (this.hasStatusFault) {
-        this.hasStatusFault = false;
-        this.lockService
-          .getCharacteristic(this.Characteristic.StatusFault)
-          .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-        this.platform.log.info(`${this.name} is back online`);
-      }
+      this.updateStatusFault(true);
     } catch (error) {
       this.platform.log.error(`Failed to ${shouldLock ? 'lock' : 'unlock'} ${this.name}:`, error.message);
       
@@ -612,13 +619,7 @@ class LockAccessory {
         this.platform.log.warn(`${this.name} is offline (low battery or connection issue)`);
         
         // Update StatusFault to indicate device is unavailable
-        if (!this.hasStatusFault) {
-          this.hasStatusFault = true;
-          this.lockService
-            .getCharacteristic(this.Characteristic.StatusFault)
-            .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-          this.platform.log.info(`${this.name} marked as having fault (offline)`);
-        }
+        this.updateStatusFault(false);
         
         // Also set battery to low to indicate potential battery issue
         if (this.batteryLevel > 20) {
@@ -695,21 +696,7 @@ class LockAccessory {
     
     // Handle device online/offline status
     if (typeof state.online === 'boolean') {
-      if (state.online && this.hasStatusFault) {
-        // Device came back online
-        this.hasStatusFault = false;
-        this.lockService
-          .getCharacteristic(this.Characteristic.StatusFault)
-          .updateValue(this.Characteristic.StatusFault.NO_FAULT);
-        this.platform.log.info(`${this.name} is back online`);
-      } else if (!state.online && !this.hasStatusFault) {
-        // Device went offline
-        this.hasStatusFault = true;
-        this.lockService
-          .getCharacteristic(this.Characteristic.StatusFault)
-          .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-        this.platform.log.warn(`${this.name} went offline`);
-      }
+      this.updateStatusFault(state.online);
     }
     
     // Update lock state
