@@ -365,14 +365,6 @@ class LockAccessory {
           : this.Characteristic.StatusFault.NO_FAULT;
       });
     
-    // Set initial StatusFault value if device is offline
-    if (this.hasStatusFault) {
-      this.lockService
-        .getCharacteristic(this.Characteristic.StatusFault)
-        .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
-      this.debugLog(`Initial StatusFault set to GENERAL_FAULT for ${this.name}`);
-    }
-
     // Battery Service
     this.batteryService = new this.Service.Battery(this.name, 'battery');
     
@@ -383,19 +375,6 @@ class LockAccessory {
     this.batteryService
       .getCharacteristic(this.Characteristic.StatusLowBattery)
       .onGet(this.getStatusLowBattery.bind(this));
-    
-    // Set initial battery values
-    this.batteryService
-      .getCharacteristic(this.Characteristic.BatteryLevel)
-      .updateValue(this.batteryLevel);
-    
-    this.batteryService
-      .getCharacteristic(this.Characteristic.StatusLowBattery)
-      .updateValue(this.isLowBattery 
-        ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
-        : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
-    
-    this.debugLog(`Initial battery state: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
 
     // Contact Sensor Service (for door state) - only if device supports it
     if (this.supportsDoorSensor) {
@@ -423,6 +402,34 @@ class LockAccessory {
       services.push(this.contactService);
     }
     return services;
+  }
+
+  /**
+   * Set initial characteristic values after services are added to platform accessory
+   */
+  setInitialCharacteristicValues() {
+    this.debugLog(`Setting initial characteristic values for ${this.name}`);
+    
+    // Set initial StatusFault value if device is offline
+    if (this.hasStatusFault) {
+      this.lockService
+        .getCharacteristic(this.Characteristic.StatusFault)
+        .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+      this.platform.log.info(`${this.name} StatusFault set to GENERAL_FAULT (device offline)`);
+    }
+    
+    // Set initial battery values
+    this.batteryService
+      .getCharacteristic(this.Characteristic.BatteryLevel)
+      .updateValue(this.batteryLevel);
+    
+    this.batteryService
+      .getCharacteristic(this.Characteristic.StatusLowBattery)
+      .updateValue(this.isLowBattery 
+        ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
+        : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
+    
+    this.debugLog(`Initial values set - Battery: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'}), StatusFault: ${this.hasStatusFault ? 'FAULT' : 'NO FAULT'}`);
   }
 
   /**

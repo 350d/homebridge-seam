@@ -231,6 +231,9 @@ class SeamPlatform {
 
       this.log.info(`Platform accessory now has ${platformAccessory.services.length} services`);
 
+      // Set initial characteristic values after services are added
+      lockAccessory.setInitialCharacteristicValues();
+
       this.log.info(`Device ${lockAccessory.name} configured successfully`);
     } catch (error) {
       this.log.error(`Failed to setup device ${deviceConfig.deviceId}:`, error.message);
