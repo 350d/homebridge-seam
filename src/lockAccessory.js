@@ -283,6 +283,34 @@ class LockAccessory {
         this.debugLog(`Device name updated to: ${this.name}`);
       }
       this.debugLog(`Device info loaded: ${this.deviceInfo.name} (${this.deviceInfo.manufacturer} ${this.deviceInfo.model})`);
+      
+      // Check initial online status and battery level
+      if (typeof deviceData.properties?.online === 'boolean') {
+        this.hasStatusFault = !deviceData.properties.online;
+        
+        if (deviceData.properties.online) {
+          // Device is online, get real battery level
+          let batteryLevel = deviceData.properties?.battery_level;
+          if (batteryLevel != null) {
+            // Convert from 0-1 to 0-100 if needed
+            if (batteryLevel > 0 && batteryLevel < 1) {
+              batteryLevel = Math.round(batteryLevel * 100);
+            }
+            batteryLevel = Math.max(0, Math.min(100, Math.round(batteryLevel)));
+            this.batteryLevel = batteryLevel;
+            this.isLowBattery = this.batteryLevel < 20;
+            this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
+            this.debugLog(`Initial battery level: ${this.batteryLevel}%`);
+          }
+        } else {
+          // Device is offline
+          this.platform.log.warn(`${this.name} is offline at startup`);
+          // Set battery to low when offline
+          this.batteryLevel = 10;
+          this.isLowBattery = true;
+          this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
+        }
+      }
     } catch (error) {
       this.platform.log.error(`Failed to load device info:`, error.message);
       this.debugLog(`Using default device info: ${this.deviceInfo.name}`);
@@ -336,6 +364,14 @@ class LockAccessory {
           ? this.Characteristic.StatusFault.GENERAL_FAULT 
           : this.Characteristic.StatusFault.NO_FAULT;
       });
+    
+    // Set initial StatusFault value if device is offline
+    if (this.hasStatusFault) {
+      this.lockService
+        .getCharacteristic(this.Characteristic.StatusFault)
+        .updateValue(this.Characteristic.StatusFault.GENERAL_FAULT);
+      this.debugLog(`Initial StatusFault set to GENERAL_FAULT for ${this.name}`);
+    }
 
     // Battery Service
     this.batteryService = new this.Service.Battery(this.name, 'battery');
@@ -347,6 +383,19 @@ class LockAccessory {
     this.batteryService
       .getCharacteristic(this.Characteristic.StatusLowBattery)
       .onGet(this.getStatusLowBattery.bind(this));
+    
+    // Set initial battery values
+    this.batteryService
+      .getCharacteristic(this.Characteristic.BatteryLevel)
+      .updateValue(this.batteryLevel);
+    
+    this.batteryService
+      .getCharacteristic(this.Characteristic.StatusLowBattery)
+      .updateValue(this.isLowBattery 
+        ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW 
+        : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
+    
+    this.debugLog(`Initial battery state: ${this.batteryLevel}% (${this.isLowBattery ? 'LOW' : 'NORMAL'})`);
 
     // Contact Sensor Service (for door state) - only if device supports it
     if (this.supportsDoorSensor) {
