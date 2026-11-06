@@ -1,13 +1,14 @@
 'use strict';
 
 const DEVICE_TYPE_MAP = {
-  'schlage_lock': { manufacturer: 'Schlage', model: 'Encode' },
-  'august_lock':  { manufacturer: 'August',  model: 'Smart Lock' },
-  'yale_lock':    { manufacturer: 'Yale',     model: 'Smart Lock' },
-  'kwikset_lock': { manufacturer: 'Kwikset', model: 'Smart Lock' },
-  'lockly_lock':  { manufacturer: 'Lockly',  model: 'Smart Lock' },
-  'nuki_lock':    { manufacturer: 'Nuki',     model: 'Smart Lock' },
-  'tedee_lock':   { manufacturer: 'Tedee',    model: 'Smart Lock' },
+  'schlage_lock':     { manufacturer: 'Schlage', model: 'Encode' },
+  'august_lock':      { manufacturer: 'August',  model: 'Smart Lock' },
+  'yale_lock':        { manufacturer: 'Yale',     model: 'Smart Lock' },
+  'yale_access_lock': { manufacturer: 'August',  model: 'Smart Lock' },
+  'kwikset_lock':     { manufacturer: 'Kwikset', model: 'Smart Lock' },
+  'lockly_lock':      { manufacturer: 'Lockly',  model: 'Smart Lock' },
+  'nuki_lock':        { manufacturer: 'Nuki',     model: 'Smart Lock' },
+  'tedee_lock':       { manufacturer: 'Tedee',    model: 'Smart Lock' },
 };
 
 /**
@@ -72,6 +73,41 @@ class LockAccessory {
     if (this.platform.config.debug) {
       this.platform.log.info(`[DEBUG] ${message}`, ...args);
     }
+  }
+
+  /**
+   * Normalize Seam battery values (0-1 fraction or 0-100) to HomeKit 0-100.
+   */
+  _normalizeBatteryLevel(level) {
+    if (typeof level !== 'number' || Number.isNaN(level)) {
+      return null;
+    }
+    let normalized = level;
+    if (normalized > 0 && normalized <= 1) {
+      normalized = Math.round(normalized * 100);
+    } else {
+      normalized = Math.round(normalized);
+    }
+    return Math.max(0, Math.min(100, normalized));
+  }
+
+  /**
+   * Push LockCurrentState + LockTargetState from cached isLocked.
+   * Used after successful commands and explicit failure rollback.
+   */
+  _syncLockCharacteristics() {
+    if (!this.lockService) {
+      return;
+    }
+    const lockState = this.isLocked
+      ? this.Characteristic.LockCurrentState.SECURED
+      : this.Characteristic.LockCurrentState.UNSECURED;
+    this.lockService
+      .getCharacteristic(this.Characteristic.LockCurrentState)
+      .updateValue(lockState);
+    this.lockService
+      .getCharacteristic(this.Characteristic.LockTargetState)
+      .updateValue(lockState);
   }
 
   /**
@@ -157,7 +193,7 @@ class LockAccessory {
     this.debugLog(`Battery cache expired, fetching from API...`);
     try {
       const status = await this.platform.seamAPI.getLockStatus(this.deviceId);
-      const level = status.battery_level || 100;
+      const level = this._normalizeBatteryLevel(status.battery_level) ?? this.batteryCache.level;
       const isLow = level < 20;
       
       this.updateBatteryCache(level, isLow);
@@ -174,18 +210,10 @@ class LockAccessory {
       // Check if error is "Device Offline"
       if (error.message && error.message.includes('Device Offline')) {
         this.platform.log.warn(`${this.name} is offline when checking battery`);
-        
-        // Update StatusFault to indicate device is unavailable
         this.updateStatusFault(false);
-        
-        // Set battery to low to indicate potential battery issue
-        return {
-          level: 10,
-          isLow: true
-        };
       }
       
-      // Return cached value even if expired
+      // Return cached value even if expired — do not invent a fake low battery
       return {
         level: this.batteryCache.level,
         isLow: this.batteryCache.isLow
@@ -289,27 +317,18 @@ class LockAccessory {
         this.hasStatusFault = !deviceData.properties.online;
         
         if (deviceData.properties.online) {
-          // Device is online, get real battery level
-          let batteryLevel = deviceData.properties?.battery_level;
+          const batteryLevel = this._normalizeBatteryLevel(deviceData.properties?.battery_level);
           if (batteryLevel != null) {
-            // Convert from 0-1 to 0-100 if needed
-            if (batteryLevel > 0 && batteryLevel < 1) {
-              batteryLevel = Math.round(batteryLevel * 100);
-            }
-            batteryLevel = Math.max(0, Math.min(100, Math.round(batteryLevel)));
             this.batteryLevel = batteryLevel;
             this.isLowBattery = this.batteryLevel < 20;
             this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
             this.debugLog(`Initial battery level: ${this.batteryLevel}%`);
           }
+          if (typeof deviceData.properties?.locked === 'boolean') {
+            this.isLocked = deviceData.properties.locked;
+          }
         } else {
-          // Device is offline
           this.platform.log.warn(`${this.name} is offline at startup`);
-          // Set battery to low when offline
-          this.batteryLevel = 10;
-          this.isLowBattery = true;
-          this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
-          this.platform.log.info(`${this.name} Battery set to ${this.batteryLevel}% due to offline status`);
         }
       }
     } catch (error) {
@@ -376,6 +395,12 @@ class LockAccessory {
     this.batteryService
       .getCharacteristic(this.Characteristic.StatusLowBattery)
       .onGet(this.getStatusLowBattery.bind(this));
+
+    this.batteryService
+      .setCharacteristic(
+        this.Characteristic.ChargingState,
+        this.Characteristic.ChargingState.NOT_CHARGEABLE
+      );
 
     // Contact Sensor Service (for door state) - only if device supports it
     if (this.supportsDoorSensor) {
@@ -459,18 +484,20 @@ class LockAccessory {
       // SeamAPI._request() already enforces a 5-second timeout
       const status = await this.platform.seamAPI.getLockStatus(this.deviceId);
       
-      const oldLocked = this.isLocked;
-      this.isLocked = status.locked;
-      
-      // Log state change if it occurred
-      if (oldLocked !== this.isLocked) {
-        this.platform.log.info(`${this.name} lock state changed via API: ${oldLocked ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
+      if (typeof status.locked === 'boolean') {
+        const oldLocked = this.isLocked;
+        this.isLocked = status.locked;
+        if (oldLocked !== this.isLocked) {
+          this.platform.log.info(`${this.name} lock state changed via API: ${oldLocked ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
+        }
       }
       
-      // getLockStatus() always returns battery_level; fall back to cache only as a safety net
-      this.batteryLevel = status.battery_level ?? this.batteryCache.level;
-      this.isLowBattery = this.batteryLevel < 20;
-      this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
+      const normalizedBattery = this._normalizeBatteryLevel(status.battery_level);
+      if (normalizedBattery != null) {
+        this.batteryLevel = normalizedBattery;
+        this.isLowBattery = this.batteryLevel < 20;
+        this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
+      }
       
       const state = this.isLocked 
         ? this.Characteristic.LockCurrentState.SECURED 
@@ -483,10 +510,7 @@ class LockAccessory {
         this.updateStatusFault(status.online);
       }
 
-      // Keep LockTargetState in sync with current state
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockTargetState)
-        .updateValue(state);
+      // Do not force LockTargetState here — Target is owned by onSet / command result
       
       // Update battery characteristics
       this.batteryService
@@ -503,39 +527,16 @@ class LockAccessory {
     } catch (error) {
       this.platform.log.error(`Failed to get lock state for ${this.name}:`, error.message);
       
-      // Check if error is "Device Offline"
       if (error.message && error.message.includes('Device Offline')) {
         this.platform.log.warn(`${this.name} is offline (low battery or connection issue)`);
-        
-        // Update StatusFault to indicate device is unavailable
         this.updateStatusFault(false);
-        
-        // Also set battery to low to indicate potential battery issue
-        if (this.batteryLevel > 20) {
-          this.platform.log.warn(`${this.name} might have low battery - updating status`);
-          this.batteryLevel = 10;
-          this.isLowBattery = true;
-          this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
-          
-          this.batteryService
-            .getCharacteristic(this.Characteristic.BatteryLevel)
-            .updateValue(this.batteryLevel);
-          
-          this.batteryService
-            .getCharacteristic(this.Characteristic.StatusLowBattery)
-            .updateValue(this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW);
-        }
       }
       
-      // Return cached state instead of throwing error
+      // Return cached state; do not mutate LockTargetState from a get
       const state = this.isLocked 
         ? this.Characteristic.LockCurrentState.SECURED 
         : this.Characteristic.LockCurrentState.UNSECURED;
       this.debugLog(`Returning cached state for ${this.name}: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'} (state value: ${state})`);
-
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockTargetState)
-        .updateValue(state);
       
       return state;
     }
@@ -608,19 +609,30 @@ class LockAccessory {
       this.debugLog(`Polling update is older than last polling (${new Date(this.lastPollingTime).toISOString()}), skipping for ${this.name}`);
       return;
     }
+
+    let nextState = state;
+
+    // During an in-flight lock/unlock, ignore polled lock field so Target/Current
+    // are not raced; webhooks may still confirm the physical result.
+    if (this.isCommandInProgress && source === 'polling' && typeof state.locked === 'boolean') {
+      this.debugLog(`Command in progress — ignoring polled lock state for ${this.name}`);
+      const { locked, ...rest } = state;
+      nextState = rest;
+    }
     
-    // If command is in progress, check if this update is newer
-    if (this.isCommandInProgress) {
+    if (this.isCommandInProgress && source !== 'polling') {
       if (timestamp > this.lastCommandTime) {
         this.debugLog(`Update from ${source} is newer than command in progress, applying update for ${this.name}`);
-        this.updateState(state);
+        this.updateState(nextState);
       } else {
         this.debugLog(`Command in progress and update from ${source} is older, skipping for ${this.name}`);
         return;
       }
+    } else if (!this.isCommandInProgress) {
+      this.updateState(nextState);
     } else {
-      // No command in progress, apply update
-      this.updateState(state);
+      // Command in progress + polling: apply non-lock fields only
+      this.updateState(nextState);
     }
     
     // Update source timestamps
@@ -634,92 +646,48 @@ class LockAccessory {
   }
 
   /**
-   * Race a promise against a timeout, cleaning up the timer when done
-   */
-  _withTimeout(promise, ms, message) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-  }
-
-  /**
-   * Execute lock command with improved race condition handling
+   * Execute lock command and wait for Seam action_attempt success
    */
   async executeLockCommand(shouldLock) {
     this.platform.log.info(`Executing ${shouldLock ? 'lock' : 'unlock'} command for ${this.name}...`);
 
     const commandTime = Date.now();
     this.lastCommandTime = commandTime;
+    const controller = new AbortController();
+    const timeoutMs = 30000;
+    const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const commandPromise = shouldLock
-        ? this.platform.seamAPI.lockDoor(this.deviceId)
-        : this.platform.seamAPI.unlockDoor(this.deviceId);
-
       this.debugLog(`Sending ${shouldLock ? 'lock' : 'unlock'} request to Seam API for ${this.name}`);
-      await this._withTimeout(commandPromise, 15000, 'Command timeout');
+      const commandPromise = shouldLock
+        ? this.platform.seamAPI.lockDoor(this.deviceId, { timeoutMs, signal: controller.signal })
+        : this.platform.seamAPI.unlockDoor(this.deviceId, { timeoutMs, signal: controller.signal });
+
+      await commandPromise;
       this.debugLog(`Seam API ${shouldLock ? 'lock' : 'unlock'} command completed for ${this.name}`);
 
-      // Update state with command priority
       const oldState = this.isLocked;
       this.isLocked = shouldLock;
       
       this.platform.log.info(`${this.name} lock state changed: ${oldState ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
-      
-      // Update characteristics immediately
-      const lockState = shouldLock 
-        ? this.Characteristic.LockCurrentState.SECURED 
-        : this.Characteristic.LockCurrentState.UNSECURED;
-      
-      this.debugLog(`${this.name} updating HomeKit characteristics with new lock state: ${lockState}`);
-      
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockCurrentState)
-        .updateValue(lockState);
-      
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockTargetState)
-        .updateValue(lockState);
+      this._syncLockCharacteristics();
       
       this.platform.log.info(`${this.name} ${shouldLock ? 'locked' : 'unlocked'} successfully`);
-      this.debugLog(`${this.name} HomeKit characteristics updated successfully`);
-      
-      // No delay - webhooks will handle real-time updates based on timestamps
-      this.debugLog(`${this.name} command completed, webhooks will handle any additional updates`);
-      
-      // Clear fault status on successful command
       this.updateStatusFault(true);
     } catch (error) {
       this.platform.log.error(`Failed to ${shouldLock ? 'lock' : 'unlock'} ${this.name}:`, error.message);
       
-      // Check if error is "Device Offline"
       if (error.message && error.message.includes('Device Offline')) {
         this.platform.log.warn(`${this.name} is offline (low battery or connection issue)`);
-        
-        // Update StatusFault to indicate device is unavailable
         this.updateStatusFault(false);
-        
-        // Also set battery to low to indicate potential battery issue
-        if (this.batteryLevel > 20) {
-          this.platform.log.warn(`${this.name} might have low battery - updating status`);
-          this.batteryLevel = 10; // Set to low value to indicate potential issue
-          this.isLowBattery = true;
-          this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
-          
-          this.batteryService
-            .getCharacteristic(this.Characteristic.BatteryLevel)
-            .updateValue(this.batteryLevel);
-          
-          this.batteryService
-            .getCharacteristic(this.Characteristic.StatusLowBattery)
-            .updateValue(this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW);
-        }
       }
+
+      // Roll Target/Current back to the last known physical state
+      this._syncLockCharacteristics();
       
-      // Throw HAP error to indicate failure to HomeKit
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    } finally {
+      clearTimeout(abortTimer);
     }
   }
 
@@ -779,7 +747,7 @@ class LockAccessory {
       this.updateStatusFault(state.online);
     }
     
-    // Update lock state
+    // Update lock current state only — Target is owned by onSet / command result
     if (typeof state.locked === 'boolean' && state.locked !== this.isLocked) {
       const oldState = this.isLocked;
       this.isLocked = state.locked;
@@ -789,27 +757,30 @@ class LockAccessory {
         : this.Characteristic.LockCurrentState.UNSECURED;
       
       this.platform.log.info(`${this.name} lock state changed: ${oldState ? 'LOCKED' : 'UNLOCKED'} → ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
-      this.debugLog(`${this.name} updating HomeKit characteristics with new lock state: ${lockState}`);
+      this.debugLog(`${this.name} updating HomeKit LockCurrentState: ${lockState}`);
       
       this.lockService
         .getCharacteristic(this.Characteristic.LockCurrentState)
         .updateValue(lockState);
-      
-      this.lockService
-        .getCharacteristic(this.Characteristic.LockTargetState)
-        .updateValue(lockState);
+
+      // Outside an active command, keep Target aligned with physical state
+      if (!this.isCommandInProgress) {
+        this.lockService
+          .getCharacteristic(this.Characteristic.LockTargetState)
+          .updateValue(lockState);
+      }
       
       this.debugLog(`${this.name} HomeKit characteristics updated successfully`);
     } else if (typeof state.locked === 'boolean') {
       this.debugLog(`${this.name} lock state unchanged: ${this.isLocked ? 'LOCKED' : 'UNLOCKED'}`);
     }
 
-    // Update battery level
-    if (typeof state.battery_level === 'number' && state.battery_level !== this.batteryLevel) {
-      this.batteryLevel = state.battery_level;
+    // Update battery level (normalize 0-1 Seam fractions from webhooks)
+    const normalizedBattery = this._normalizeBatteryLevel(state.battery_level);
+    if (normalizedBattery != null && normalizedBattery !== this.batteryLevel) {
+      this.batteryLevel = normalizedBattery;
       this.isLowBattery = this.batteryLevel < 20;
       
-      // Update cache with fresh data
       this.updateBatteryCache(this.batteryLevel, this.isLowBattery);
       
       this.batteryService

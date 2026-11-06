@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.14.0] - 2026-11-06
+
+### Fixed
+- Lock/unlock now waits for Seam `action_attempt` success instead of treating HTTP `pending` as done (stops false "Locked" in Home when the physical lock fails, e.g. August/Yale Access 403)
+- `LockTargetState` is no longer forced from polling/`get` during an in-flight command (correct HAP locking UI)
+- Unknown/omitted Seam `locked` no longer defaults to LOCKED — cached state is kept
+- Webhook battery values in 0–1 fraction form are normalized to 0–100 HomeKit percent
+- Offline handling no longer invents a fake 10% battery; uses `StatusFault` and cached battery instead
+- Single 30s AbortSignal timeout for action-attempt polling (no orphaned background polls)
+
+### Improved
+- Explicit Target/Current rollback on failed lock/unlock commands
+- Polling ignores `locked` while a command is in progress; webhooks can still confirm
+- `ChargingState` set to `NOT_CHARGEABLE` on Battery service
+- Device type map includes `yale_access_lock`
+
 ## [2.11.0] - 2026-06-07
 
 ### Fixed

@@ -137,14 +137,86 @@ class SeamAPI {
   }
 
   /**
-   * Lock the device
+   * Poll an action attempt until it leaves pending status.
+   * Seam returns pending immediately; physical lock/unlock finishes later.
+   * Pass AbortSignal to cancel polling when the caller times out.
    */
-  async lockDoor(deviceId) {
+  async waitForActionAttempt(actionAttempt, { timeoutMs = 30000, intervalMs = 1000, signal } = {}) {
+    if (!actionAttempt?.action_attempt_id) {
+      throw new Error('Missing action_attempt_id from Seam API');
+    }
+
+    let current = actionAttempt;
+    const deadline = Date.now() + timeoutMs;
+
+    while (current.status === 'pending') {
+      if (signal?.aborted) {
+        throw new Error(`Action attempt aborted (${current.action_type})`);
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Action attempt timed out after ${timeoutMs}ms (${current.action_type})`);
+      }
+
+      await new Promise((resolve, reject) => {
+        let onAbort;
+        const timer = setTimeout(() => {
+          if (signal && onAbort) {
+            signal.removeEventListener('abort', onAbort);
+          }
+          resolve();
+        }, intervalMs);
+
+        if (!signal) {
+          return;
+        }
+
+        onAbort = () => {
+          clearTimeout(timer);
+          reject(new Error(`Action attempt aborted (${current.action_type})`));
+        };
+
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+
+      if (signal?.aborted) {
+        throw new Error(`Action attempt aborted (${current.action_type})`);
+      }
+
+      const response = await this._requestWithRetry('POST', '/action_attempts/get', {
+        action_attempt_id: current.action_attempt_id
+      });
+      current = response.action_attempt;
+      if (!current) {
+        throw new Error('Empty action_attempt in Seam API response');
+      }
+    }
+
+    if (current.status === 'error' || current.status === 'failed') {
+      const err = current.error || {};
+      const detail = [err.type, err.message].filter(Boolean).join(': ') || 'unknown error';
+      throw new Error(`Action attempt failed (${current.action_type}): ${detail}`);
+    }
+
+    if (current.status !== 'success') {
+      throw new Error(`Unexpected action attempt status: ${current.status}`);
+    }
+
+    return current;
+  }
+
+  /**
+   * Lock the device and wait until Seam confirms success/failure
+   */
+  async lockDoor(deviceId, options = {}) {
     try {
       const response = await this._requestWithRetry('POST', '/locks/lock_door', {
         device_id: deviceId
       });
-      return response.action_attempt;
+      return await this.waitForActionAttempt(response.action_attempt, options);
     } catch (error) {
       this.log.error(`Failed to lock device ${deviceId}:`, error.message);
       throw error;
@@ -152,14 +224,14 @@ class SeamAPI {
   }
 
   /**
-   * Unlock the device
+   * Unlock the device and wait until Seam confirms success/failure
    */
-  async unlockDoor(deviceId) {
+  async unlockDoor(deviceId, options = {}) {
     try {
       const response = await this._requestWithRetry('POST', '/locks/unlock_door', {
         device_id: deviceId
       });
-      return response.action_attempt;
+      return await this.waitForActionAttempt(response.action_attempt, options);
     } catch (error) {
       this.log.error(`Failed to unlock device ${deviceId}:`, error.message);
       throw error;
@@ -176,19 +248,23 @@ class SeamAPI {
       // Convert battery level from 0-1 fraction to 0-100 percentage if needed
       let batteryLevel = device.properties?.battery_level;
       if (batteryLevel == null) {
-        batteryLevel = 100;
-      } else if (batteryLevel > 0 && batteryLevel < 1) {
+        batteryLevel = null;
+      } else if (batteryLevel > 0 && batteryLevel <= 1) {
         batteryLevel = Math.round(batteryLevel * 100);
+      } else {
+        batteryLevel = Math.max(0, Math.min(100, Math.round(batteryLevel)));
       }
-      batteryLevel = Math.max(0, Math.min(100, Math.round(batteryLevel)));
 
       return {
+        // null when Seam omits locked (e.g. offline) — callers keep cached state
         locked: typeof device.properties?.locked === 'boolean'
           ? device.properties.locked
-          : true,  // Default to LOCKED when state is unknown
+          : null,
         battery_level: batteryLevel,
         online: device.properties?.online ?? false,
-        door_open: device.properties?.door_open ?? false
+        door_open: typeof device.properties?.door_open === 'boolean'
+          ? device.properties.door_open
+          : null
       };
     } catch (error) {
       this.log.error(`Failed to get lock status for ${deviceId}:`, error.message);
